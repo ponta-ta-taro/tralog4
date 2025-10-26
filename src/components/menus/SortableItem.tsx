@@ -1,7 +1,7 @@
-'use client';
-
+﻿'use client';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import React from 'react';
 
 export function SortableItem({ id, children }: { id: string; children: React.ReactNode }) {
   const {
@@ -13,7 +13,7 @@ export function SortableItem({ id, children }: { id: string; children: React.Rea
     isDragging,
   } = useSortable({ id });
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
