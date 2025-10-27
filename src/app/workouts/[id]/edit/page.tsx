@@ -1,19 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { getWorkoutById, updateWorkout } from '@/services/workoutService';
 import { getMenus } from '@/services/menuService';
 import type { WorkoutExercise, ExerciseSet } from '@/types/workout';
-import type { Menu } from '@/types/menu';
+import type { Menu, MenuType } from '@/types/menu';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
+import type { Timestamp } from 'firebase/firestore';
 
 interface ValidationResult {
   isValid: boolean;
@@ -43,7 +44,8 @@ const createDefaultSet = (type: WorkoutExercise['type']): ExerciseSet => ({
 });
 
 export default function EditWorkoutPage() {
-  const { id } = useParams();
+  const params = useParams<{ id: string }>();
+  const id = params.id;
   const { user } = useAuth();
   const router = useRouter();
 
@@ -74,14 +76,14 @@ export default function EditWorkoutPage() {
     return `${hours}:${minutes}`;
   };
 
-  const combineDateAndTime = (dateStr: string, timeStr: string): Date | undefined => {
+  const combineDateAndTime = useCallback((dateStr: string, timeStr: string): Date | undefined => {
     if (!dateStr || !timeStr) return undefined;
     const candidate = new Date(`${dateStr}T${timeStr}:00`);
     if (isNaN(candidate.getTime())) return undefined;
     return candidate;
-  };
+  }, []);
 
-  const calculateDurationFromTimes = (dateStr: string, startStr: string, endStr: string): number | undefined => {
+  const calculateDurationFromTimes = useCallback((dateStr: string, startStr: string, endStr: string): number | undefined => {
     const start = combineDateAndTime(dateStr, startStr);
     const end = combineDateAndTime(dateStr, endStr);
     if (!start || !end) return undefined;
@@ -90,7 +92,7 @@ export default function EditWorkoutPage() {
       diff += 24 * 60 * 60 * 1000;
     }
     return Math.max(0, Math.round(diff / 60000));
-  };
+  }, [combineDateAndTime]);
 
   const formatDurationLabel = (minutes?: number) => {
     if (!minutes || minutes <= 0) return '-';
@@ -115,7 +117,7 @@ export default function EditWorkoutPage() {
 
       try {
         const [workoutData, fetchedMenus] = await Promise.all([
-          getWorkoutById(user.uid, id as string),
+          getWorkoutById(user.uid, id),
           getMenus(user.uid)
         ]);
 
@@ -144,8 +146,8 @@ export default function EditWorkoutPage() {
           return matchingMenu?.id ?? '';
         }));
 
-        const initialStartTime = toTimeInputValue(workoutData.startTime as any);
-        const initialEndTime = toTimeInputValue(workoutData.endTime as any);
+        const initialStartTime = toTimeInputValue(workoutData.startTime);
+        const initialEndTime = toTimeInputValue(workoutData.endTime);
         setStartTimeInput(initialStartTime);
         setEndTimeInput(initialEndTime);
 
@@ -159,8 +161,8 @@ export default function EditWorkoutPage() {
           );
         }
 
-        setWarmupMinutes(typeof (workoutData as any).warmupDuration === 'number' ? (workoutData as any).warmupDuration : 0);
-        setCooldownMinutes(typeof (workoutData as any).cooldownDuration === 'number' ? (workoutData as any).cooldownDuration : 0);
+        setWarmupMinutes(typeof workoutData.warmupDuration === 'number' ? workoutData.warmupDuration : 0);
+        setCooldownMinutes(typeof workoutData.cooldownDuration === 'number' ? workoutData.cooldownDuration : 0);
       } catch (err) {
         console.error('トレーニング編集データの取得中にエラーが発生しました:', err);
         setError('トレーニングデータの取得に失敗しました。時間をおいて再度お試しください。');
@@ -172,13 +174,13 @@ export default function EditWorkoutPage() {
     };
 
     fetchData();
-  }, [user, id]);
+  }, [user, id, calculateDurationFromTimes]);
 
   useEffect(() => {
     if (startTimeInput && endTimeInput) {
       setDurationMinutes(calculateDurationFromTimes(date, startTimeInput, endTimeInput));
     }
-  }, [startTimeInput, endTimeInput, date]);
+  }, [startTimeInput, endTimeInput, date, calculateDurationFromTimes]);
 
   const handleExerciseMenuSelect = (index: number, menuId: string) => {
     const menu = menus.find(m => m.id === menuId);
@@ -189,7 +191,6 @@ export default function EditWorkoutPage() {
     setExercises(prev => {
       const next = [...prev];
       const current = next[index];
-      const lastSet = current?.sets[current.sets.length - 1];
       next[index] = {
         id: current?.id ?? crypto.randomUUID(),
         name: menu.name,
@@ -355,7 +356,7 @@ export default function EditWorkoutPage() {
         cooldownDuration: Math.max(0, Number.isFinite(cooldownMinutes) ? cooldownMinutes : 0)
       };
 
-      await updateWorkout(user.uid, id as string, workoutData);
+      await updateWorkout(user.uid, id, workoutData);
       router.push(`/workouts/${id}`);
     } catch (err) {
       console.error('トレーニング更新中にエラーが発生しました:', err);
@@ -677,7 +678,9 @@ export default function EditWorkoutPage() {
   );
 }
 
-function normalizeDate(value: any): string {
+type FirestoreTimestampLike = Timestamp | { seconds: number; nanoseconds?: number } | string | number | Date | null | undefined;
+
+function normalizeDate(value?: FirestoreTimestampLike): string {
   try {
     if (!value) return new Date().toISOString().split('T')[0];
     if (typeof value === 'string') {
@@ -688,8 +691,13 @@ function normalizeDate(value: any): string {
     if (value instanceof Date) {
       return value.toISOString().split('T')[0];
     }
-    if (typeof value.toDate === 'function') {
-      const date = value.toDate();
+    if (value && typeof (value as Timestamp).toDate === 'function') {
+      const date = (value as Timestamp).toDate();
+      return date.toISOString().split('T')[0];
+    }
+    if (value && typeof value === 'object' && 'seconds' in (value as { seconds: number })) {
+      const t = value as { seconds: number; nanoseconds?: number };
+      const date = new Date(t.seconds * 1000 + (t.nanoseconds || 0) / 1_000_000);
       return date.toISOString().split('T')[0];
     }
   } catch (error) {
@@ -698,7 +706,7 @@ function normalizeDate(value: any): string {
   return new Date().toISOString().split('T')[0];
 }
 
-function resolveMenuTypeForExercise(exercise: WorkoutExercise): import('@/types/menu').MenuType {
+function resolveMenuTypeForExercise(exercise: WorkoutExercise): MenuType {
   if (exercise.menuType) return exercise.menuType;
   if (exercise.type === 'time') {
     const hasDistance = exercise.sets?.some(set => typeof set.distance === 'number' && set.distance > 0);

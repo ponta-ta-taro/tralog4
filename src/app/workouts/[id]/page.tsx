@@ -285,13 +285,13 @@ export default function WorkoutDetailPage() {
     );
   }
 
-  const formatDate = (dateValue: any): string => {
+  const formatDate = (dateValue: unknown): string => {
     try {
       let date: Date;
       
       // Firestore Timestampの場合
-      if (dateValue && typeof dateValue.toDate === 'function') {
-        date = dateValue.toDate();
+      if (dateValue && typeof (dateValue as { toDate?: unknown }).toDate === 'function') {
+        date = (dateValue as { toDate: () => Date }).toDate();
       }
       // Dateオブジェクトの場合
       else if (dateValue instanceof Date) {

@@ -3,15 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getWorkouts } from '@/services/workoutService';
-import { Workout, WorkoutExercise } from '@/types/workout';
-
-// 型ガード関数
-const isFirestoreTimestamp = (value: unknown): value is { toDate: () => Date } => {
-  return value !== null && 
-         typeof value === 'object' && 
-         'toDate' in (value as object) && 
-         typeof (value as { toDate: unknown }).toDate === 'function';
-};
+import { Workout } from '@/types/workout';
 
 const toDateSafe = (value: unknown): Date | null => {
   if (!value) return null;
@@ -32,23 +24,6 @@ const formatDate = (dateValue: unknown): string => {
   return date.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
 };
 
-const formatTimeLabel = (value: unknown): string | null => {
-  const date = toDateSafe(value);
-  if (!date) return null;
-  return date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false });
-};
-
-const hasValidDuration = (minutes?: number): minutes is number => typeof minutes === 'number' && minutes > 0;
-
-const formatDuration = (minutes?: number): string => {
-  if (!minutes || minutes <= 0) return '';
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (hours > 0 && rest > 0) return `${hours}時間${rest}分`;
-  if (hours > 0) return `${hours}時間`;
-  return `${rest}分`;
-};
-
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
@@ -62,7 +37,7 @@ export default function WorkoutsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [expandedMenuSections, setExpandedMenuSections] = useState<Set<string>>(new Set());
+  // 展開状態などのUIステートは未使用のため削除
 
   // Calendar states
   const today = new Date();
@@ -82,12 +57,6 @@ export default function WorkoutsPage() {
       
       try {
         const userWorkouts = await getWorkouts(user.uid);
-        console.log('=== Workout Data ===');
-        userWorkouts.forEach(workout => {
-          console.log('workout.startTime:', workout.startTime);
-          console.log('workout.endTime:', workout.endTime);
-          console.log('workout.duration:', workout.duration);
-        });
         setWorkouts(userWorkouts);
       } catch (err) {
         console.error('トレーニング履歴の取得に失敗しました:', err);
@@ -211,23 +180,7 @@ export default function WorkoutsPage() {
     return date.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
   };
 
-  const formatSeconds = (totalSeconds?: number): string => {
-    if (!totalSeconds || totalSeconds <= 0) return '0秒';
-    const s = Math.round(totalSeconds);
-    const m = Math.floor(s / 60);
-    const r = s % 60;
-    if (m > 0 && r > 0) return `${m}分${r}秒`;
-    if (m > 0) return `${m}分`;
-    return `${r}秒`;
-  };
-
-  const toggleMenuSection = (id: string) => {
-    setExpandedMenuSections(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
+  // 未使用のユーティリティは削除
 
   // 日付でグループ化
   const workoutsByDate = workouts.reduce<Record<string, Workout[]>>((acc, workout) => {
@@ -254,24 +207,6 @@ export default function WorkoutsPage() {
     const bDate = new Date(`${b}T00:00:00`).getTime();
     return (Number.isNaN(bDate) ? 0 : bDate) - (Number.isNaN(aDate) ? 0 : aDate);
   });
-
-  // 総ボリュームを計算
-  const calculateTotalVolume = (workout: Workout) => {
-    return workout.exercises.reduce((total, exercise) => {
-      return total + exercise.sets.reduce((setTotal, set) => {
-        if (exercise.type === 'weight' && 'weight' in set && 'reps' in set) {
-          return setTotal + (Number(set.weight) * Number(set.reps));
-        }
-        return setTotal;
-      }, 0);
-    }, 0);
-  };
-
-  const calculateExerciseVolume = (exercise: WorkoutExercise): number => {
-    const type = (exercise as any).menuType || exercise.type;
-    if (type !== 'weight') return 0;
-    return exercise.sets.reduce((sum, set) => sum + Number(set.weight || 0) * Number(set.reps || 0), 0);
-  };
 
   // ローディングスケルトン
   if (isLoading) {
@@ -423,26 +358,6 @@ export default function WorkoutsPage() {
         <div className="space-y-8">
           {sortedDates.map(date => {
             const dayWorkouts = workoutsByDate[date];
-            const earliestStart = dayWorkouts.reduce<number | null>((earliest, workout) => {
-              const start = toDateSafe(workout.startTime);
-              if (!start) return earliest;
-              const timestamp = start.getTime();
-              return earliest === null || timestamp < earliest ? timestamp : earliest;
-            }, null);
-            const latestEnd = dayWorkouts.reduce<number | null>((latest, workout) => {
-              const end = toDateSafe(workout.endTime);
-              if (!end) return latest;
-              const timestamp = end.getTime();
-              return latest === null || timestamp > latest ? timestamp : latest;
-            }, null);
-            const totalDurationMinutes = dayWorkouts.reduce(
-              (total, workout) => total + (workout.duration ?? 0),
-              0
-            );
-            const dayStartLabel = earliestStart !== null ? formatTimeLabel(new Date(earliestStart)) : null;
-            const dayEndLabel = latestEnd !== null ? formatTimeLabel(new Date(latestEnd)) : null;
-            const dayDurationLabel = totalDurationMinutes > 0 ? formatDuration(totalDurationMinutes) : null;
-
             return (
               <div key={date} id={`day-${date}`} className="space-y-4">
                 <div>
@@ -452,35 +367,14 @@ export default function WorkoutsPage() {
                       {formatDayHeader(date)}
                     </h2>
                   </div>
-                  {/* 日付ヘッダの詳細行は削除（重複排除） */}
                 </div>
 
                 <div className="space-y-4 border-l border-gray-200 pl-4">
-                  {dayWorkouts.map(workout => {
-                    const totalVolume = calculateTotalVolume(workout);
-                    const exerciseNames = workout.exercises
-                      .map(exercise => exercise.name)
-                      .filter((name, index, self) => self.indexOf(name) === index)
-                      .join('、');
-                    const convertedStartTime = toDateSafe(workout.startTime);
-                    const convertedEndTime = toDateSafe(workout.endTime);
-                    console.log('Converted startTime:', convertedStartTime);
-                    console.log('Converted endTime:', convertedEndTime);
-                    const startLabel = convertedStartTime
-                      ? convertedStartTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false })
-                      : null;
-                    const endLabel = convertedEndTime
-                      ? convertedEndTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false })
-                      : null;
-                    const durationLabel = hasValidDuration(workout.duration) ? formatDuration(workout.duration) : null;
-                    const isExpanded = expandedMenuSections.has(workout.id);
-
-                    return (
-                      <div key={workout.id}>
-                        <WorkoutCard workout={workout as any} showEditButton={true} />
-                      </div>
-                    );
-                  })}
+                  {dayWorkouts.map(workout => (
+                    <div key={workout.id}>
+                      <WorkoutCard workout={workout} showEditButton={true} />
+                    </div>
+                  ))}
                 </div>
               </div>
             );

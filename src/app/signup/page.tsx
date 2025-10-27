@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import Link from 'next/link';
+import { FirebaseError } from 'firebase/app';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -36,15 +37,19 @@ export default function SignupPage() {
       }
       
       router.push('/');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Signup error:', err);
-      
-      if (err.code === 'auth/email-already-in-use') {
-        setError('このメールアドレスは既に使用されています。');
-      } else if (err.code === 'auth/invalid-email') {
-        setError('有効なメールアドレスを入力してください。');
-      } else if (err.code === 'auth/weak-password') {
-        setError('パスワードが弱すぎます。もっと複雑なパスワードを設定してください。');
+
+      if (err instanceof FirebaseError) {
+        if (err.code === 'auth/email-already-in-use') {
+          setError('このメールアドレスは既に使用されています。');
+        } else if (err.code === 'auth/invalid-email') {
+          setError('有効なメールアドレスを入力してください。');
+        } else if (err.code === 'auth/weak-password') {
+          setError('パスワードが弱すぎます。もっと複雑なパスワードを設定してください。');
+        } else {
+          setError('アカウントの作成中にエラーが発生しました。');
+        }
       } else {
         setError('アカウントの作成中にエラーが発生しました。');
       }

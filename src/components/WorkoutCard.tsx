@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Workout } from '@/types/workout';
+import { Workout, WorkoutExercise, ExerciseSet } from '@/types/workout';
 import { useRouter } from 'next/navigation';
 
 interface WorkoutCardProps {
@@ -15,9 +15,9 @@ export function WorkoutCard({ workout, showEditButton = false }: WorkoutCardProp
   const [isExpanded, setIsExpanded] = useState(false);
   const router = useRouter();
 
-  const formatTime = (date?: Date) => {
+  const formatTime = (date?: Date | string) => {
     if (!date) return '';
-    const d = date instanceof Date ? date : new Date(date as any);
+    const d = date instanceof Date ? date : new Date(date);
     if (Number.isNaN(d.getTime())) return '';
     return d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false });
   };
@@ -38,10 +38,10 @@ export function WorkoutCard({ workout, showEditButton = false }: WorkoutCardProp
     return `${r}秒`;
   };
 
-  const calculateExerciseVolume = (exercise: any): number => {
-    const type = (exercise as any).menuType || exercise.type;
+  const calculateExerciseVolume = (exercise: WorkoutExercise): number => {
+    const type = exercise.menuType || exercise.type;
     if (type !== 'weight') return 0;
-    return (exercise.sets || []).reduce((sum: number, set: any) => sum + Number(set.weight || 0) * Number(set.reps || 0), 0);
+    return (exercise.sets || []).reduce((sum: number, set: ExerciseSet) => sum + Number(set.weight || 0) * Number(set.reps || 0), 0);
   };
 
   const handleEdit = () => {
@@ -77,21 +77,21 @@ export function WorkoutCard({ workout, showEditButton = false }: WorkoutCardProp
         <div className="mt-4 space-y-4">
           <div className="space-y-1 text-sm">
             <div>⏱️ トレーニング時間: {workout.duration ?? 0}分</div>
-            <div>🔥 ウォームアップ: {formatSeconds((workout as any).warmupDuration as number)}</div>
-            <div>❄️ クールダウン: {formatSeconds((workout as any).cooldownDuration as number)}</div>
+            <div>🔥 ウォームアップ: {formatSeconds(workout.warmupDuration)}</div>
+            <div>❄️ クールダウン: {formatSeconds(workout.cooldownDuration)}</div>
           </div>
 
-          {workout.exercises.map((exercise) => (
+          {workout.exercises.map((exercise: WorkoutExercise) => (
             <div key={exercise.id} className="border-t pt-3">
               <div className="font-semibold text-base mb-1">{exercise.name}</div>
-              {typeof (exercise as any).durationSeconds === 'number' && (exercise as any).durationSeconds > 0 && (
-                <div className="text-sm text-gray-600 mb-2">所要時間　{formatSeconds((exercise as any).durationSeconds as number)}</div>
+              {typeof exercise.durationSeconds === 'number' && exercise.durationSeconds > 0 && (
+                <div className="text-sm text-gray-600 mb-2">所要時間　{formatSeconds(exercise.durationSeconds)}</div>
               )}
               <div className="text-sm text-gray-600 mb-2">
                 セット数: {exercise.sets.length}　/　総重量{calculateExerciseVolume(exercise)}kg
               </div>
               <div className="space-y-1">
-                {exercise.sets.map((set, idx) => (
+                {exercise.sets.map((set: ExerciseSet, idx: number) => (
                   <div key={idx} className="text-sm text-gray-600">
                     {Number(set.weight || 0)}kg　{Number(set.reps || 0)}回
                   </div>

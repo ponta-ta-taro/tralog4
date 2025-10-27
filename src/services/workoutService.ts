@@ -21,6 +21,30 @@ const MENU_TYPE_VALUES: readonly MenuType[] = ['weight', 'bodyweight', 'time', '
 
 type WeeklyVolumeByType = Record<MenuType, number>;
 
+type FirestoreTimestampLike =
+  | Timestamp
+  | { seconds: number; nanoseconds?: number }
+  | string
+  | number
+  | Date
+  | null
+  | undefined;
+
+type WorkoutDoc = {
+  userId?: string;
+  date: FirestoreTimestampLike;
+  exercises?: Array<Partial<WorkoutExercise> & { sets?: ExerciseSet[]; menuName?: string; name?: string; menuType?: MenuType }>;
+  notes?: string;
+  totalVolume?: number;
+  createdAt?: FirestoreTimestampLike;
+  updatedAt?: FirestoreTimestampLike;
+  startTime?: FirestoreTimestampLike;
+  endTime?: FirestoreTimestampLike;
+  duration?: number;
+  warmupDuration?: number;
+  cooldownDuration?: number;
+};
+
 const createInitialVolumeByType = (): WeeklyVolumeByType => ({
   weight: 0,
   bodyweight: 0,
@@ -60,29 +84,29 @@ export const getTodaysWorkouts = async (userId: string): Promise<Workout[]> => {
     const snap = await getDocs(q);
 
     const workouts: Workout[] = snap.docs.map((docSnap) => {
-      const data = docSnap.data();
+      const data = docSnap.data() as WorkoutDoc;
       const date = convertToDate(data.date);
-      const createdAt = convertToDate(data.createdAt);
+      const createdAt = data.createdAt ? convertToDate(data.createdAt) : new Date();
       const updatedAt = data.updatedAt ? convertToDate(data.updatedAt) : new Date();
       const startTime = data.startTime ? convertToDate(data.startTime) : undefined;
       const endTime = data.endTime ? convertToDate(data.endTime) : undefined;
 
-      return {
+      const workout: Workout = {
         id: docSnap.id,
         userId: data.userId || userId,
         date: date.toISOString(),
-        exercises: data.exercises || [],
+        exercises: (data.exercises as unknown as WorkoutExercise[]) || [],
         notes: data.notes || '',
         totalVolume: data.totalVolume || 0,
-        createdAt: createdAt.toISOString(),
-        updatedAt: updatedAt.toISOString(),
+        createdAt,
+        updatedAt,
         startTime,
         endTime,
         duration: typeof data.duration === 'number' ? data.duration : undefined,
-        // 追加フィールド（秒）
-        warmupDuration: typeof data.warmupDuration === 'number' ? data.warmupDuration : 0,
-        cooldownDuration: typeof data.cooldownDuration === 'number' ? data.cooldownDuration : 0
-      } as unknown as Workout;
+        warmupDuration: data.warmupDuration || 0,
+        cooldownDuration: data.cooldownDuration || 0
+      };
+      return workout;
     });
 
     console.log('=== getTodaysWorkouts 完了 ===', { count: workouts.length });
@@ -158,7 +182,7 @@ export const getLastWeeksStats = async (
         if (Array.isArray(data.exercises)) {
           let warmupSecondsFromMenus = 0;
           let cooldownSecondsFromMenus = 0;
-          data.exercises.forEach((exercise: any) => {
+          data.exercises.forEach((exercise: Partial<WorkoutExercise> & { sets?: ExerciseSet[]; menuName?: string; name?: string; menuType?: MenuType }) => {
             if (exercise && typeof exercise.name === 'string' && exercise.name.trim().length > 0) {
               exerciseSet.add(exercise.name.trim());
             }
@@ -168,11 +192,11 @@ export const getLastWeeksStats = async (
             }
 
             // New menu-based warmup/cooldown aggregation (time exercises only)
-            const menuName: string = (exercise as any).menuName ?? (exercise as any).name ?? '';
-            const isTimeMenu = (exercise as any).menuType === 'time' || resolveMenuType(exercise) === 'time';
+            const menuName: string = exercise.menuName ?? exercise.name ?? '';
+            const isTimeMenu = exercise.menuType === 'time' || resolveMenuType(exercise) === 'time';
             if (typeof menuName === 'string' && menuName.length > 0 && isTimeMenu) {
               const secondsSum = Array.isArray(exercise?.sets)
-                ? exercise.sets.reduce((sec: number, set: any) => {
+                ? exercise.sets.reduce((sec: number, set: ExerciseSet) => {
                     const s = Number(set?.time ?? set?.duration);
                     return Number.isFinite(s) && s > 0 ? sec + s : sec;
                   }, 0)
@@ -303,17 +327,16 @@ const computeVolumeForExercise = (exercise: Partial<WorkoutExercise> & { sets?: 
 };
 
 // Helper function to remove undefined values
-const removeUndefined = (obj: any): any => {
+const removeUndefined = <T>(obj: T): T => {
   if (Array.isArray(obj)) {
-    return obj.map(item => removeUndefined(item)).filter(item => item !== undefined);
+    return obj.map(item => removeUndefined(item)).filter(item => item !== undefined) as unknown as T;
   }
   
   if (obj !== null && typeof obj === 'object') {
-    return Object.fromEntries(
-      Object.entries(obj)
-        .filter(([_, v]) => v !== undefined)
-        .map(([k, v]) => [k, removeUndefined(v)])
-    );
+    const entries = Object.entries(obj as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => [k, removeUndefined(v as unknown)] as const);
+    return Object.fromEntries(entries) as T;
   }
   
   return obj;
@@ -326,7 +349,7 @@ export const createWorkout = async (userId: string, workoutData: Omit<Workout, '
     console.log('1. 受信したデータ:', JSON.stringify(workoutData, null, 2));
     
     // 日付の処理
-    const rawDate: any = workoutData.date as any;
+    const rawDate: unknown = workoutData.date as unknown;
     let dateToSave: Timestamp;
 
     if (typeof rawDate === 'string') {
@@ -370,12 +393,12 @@ export const createWorkout = async (userId: string, workoutData: Omit<Workout, '
       ...workoutData,
       // 明示的に含める（0 も有効な値として保存）
       warmupDuration:
-        typeof (workoutData as any).warmupDuration === 'number'
-          ? Math.max(0, (workoutData as any).warmupDuration as number)
+        typeof workoutData.warmupDuration === 'number'
+          ? Math.max(0, workoutData.warmupDuration)
           : undefined,
       cooldownDuration:
-        typeof (workoutData as any).cooldownDuration === 'number'
-          ? Math.max(0, (workoutData as any).cooldownDuration as number)
+        typeof workoutData.cooldownDuration === 'number'
+          ? Math.max(0, workoutData.cooldownDuration)
           : undefined,
       date: dateToSave,
       startTime: normalizeTimeField(workoutData.startTime),
@@ -429,16 +452,17 @@ export const createWorkout = async (userId: string, workoutData: Omit<Workout, '
 };
 
 // Helper function to convert Firestore Timestamp to Date
-const convertToDate = (timestamp: any): Date => {
+const convertToDate = (timestamp: FirestoreTimestampLike): Date => {
   try {
     // If it's a Firestore Timestamp object
-    if (timestamp && typeof timestamp.toDate === 'function') {
-      return timestamp.toDate();
+    if (timestamp && typeof (timestamp as Timestamp).toDate === 'function') {
+      return (timestamp as Timestamp).toDate();
     }
     
     // If it's a plain object with seconds and nanoseconds
-    if (timestamp && typeof timestamp === 'object' && 'seconds' in timestamp) {
-      return new Date(timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000);
+    if (timestamp && typeof timestamp === 'object' && 'seconds' in (timestamp as { seconds: number })) {
+      const t = timestamp as { seconds: number; nanoseconds?: number };
+      return new Date(t.seconds * 1000 + (t.nanoseconds || 0) / 1000000);
     }
     
     // If it's a date string
@@ -477,7 +501,7 @@ export const getWorkouts = async (userId: string): Promise<Workout[]> => {
     console.log(`取得したドキュメント数: ${querySnapshot.docs.length}`);
     
     const workouts = querySnapshot.docs.map((doc, index) => {
-      const data = doc.data();
+      const data = doc.data() as WorkoutDoc;
       
       // デバッグ用ログ
       console.log(`\n=== ドキュメント ${index + 1} ===`);
@@ -488,18 +512,18 @@ export const getWorkouts = async (userId: string): Promise<Workout[]> => {
       
       // 日付の変換
       const date = convertToDate(data.date);
-      const createdAt = convertToDate(data.createdAt);
+      const createdAt = data.createdAt ? convertToDate(data.createdAt) : new Date();
       const updatedAt = data.updatedAt ? convertToDate(data.updatedAt) : new Date();
       const startTime = data.startTime ? convertToDate(data.startTime) : undefined;
       const endTime = data.endTime ? convertToDate(data.endTime) : undefined;
 
       console.log('変換後の date:', date);
 
-      const workout = {
+      const workout: Workout = {
         id: doc.id,
         userId: data.userId || userId,
         date: date.toISOString(),
-        exercises: data.exercises || [],
+        exercises: (data.exercises as unknown as WorkoutExercise[]) || [],
         notes: data.notes || '',
         totalVolume: data.totalVolume || 0,
         createdAt,
@@ -507,10 +531,9 @@ export const getWorkouts = async (userId: string): Promise<Workout[]> => {
         startTime,
         endTime,
         duration: typeof data.duration === 'number' ? data.duration : undefined,
-        // seconds
         warmupDuration: typeof data.warmupDuration === 'number' ? data.warmupDuration : 0,
         cooldownDuration: typeof data.cooldownDuration === 'number' ? data.cooldownDuration : 0
-      } as Workout;
+      };
 
       console.log('warmupDuration:', workout.warmupDuration, 'cooldownDuration:', workout.cooldownDuration);
       return workout;
@@ -536,7 +559,7 @@ export const updateWorkout = async (
     console.log('1. 受信したデータ:', JSON.stringify(workoutData, null, 2));
     
     // 更新するデータを準備
-    const updateData: any = { ...workoutData };
+    const updateData: Record<string, unknown> = { ...workoutData };
     
     // 日付が含まれている場合は処理
     const convertToTimestamp = (value: string | Date | Timestamp | undefined) => {
@@ -572,7 +595,7 @@ export const updateWorkout = async (
       } else if (typeof workoutData.date === 'object' && workoutData.date !== null && Object.prototype.toString.call(workoutData.date) === '[object Date]') {
         console.log('3. 日付がDateオブジェクトで渡されました。Timestampに変換します');
         updateData.date = Timestamp.fromDate(workoutData.date as Date);
-      } else if (workoutData.date && typeof (workoutData.date as any).toDate === 'function') {
+      } else if (workoutData.date && typeof (workoutData.date as Timestamp).toDate === 'function') {
         console.log('3. 日付がすでにTimestamp形式です');
         // すでにTimestamp形式の場合はそのまま使用
       } else {
@@ -584,12 +607,12 @@ export const updateWorkout = async (
     }
 
     if (workoutData.startTime !== undefined) {
-      const ts = convertToTimestamp(workoutData.startTime as any);
+      const ts = convertToTimestamp(workoutData.startTime);
       updateData.startTime = ts;
     }
 
     if (workoutData.endTime !== undefined) {
-      const ts = convertToTimestamp(workoutData.endTime as any);
+      const ts = convertToTimestamp(workoutData.endTime);
       updateData.endTime = ts;
     }
 
@@ -645,25 +668,25 @@ export const getWorkoutById = async (userId: string, workoutId: string): Promise
     
     // 日付の変換
     const date = convertToDate(data.date);
-    const createdAt = convertToDate(data.createdAt);
+    const createdAt = data.createdAt ? convertToDate(data.createdAt) : new Date();
     const updatedAt = data.updatedAt ? convertToDate(data.updatedAt) : new Date();
     
     console.log('変換後の date:', date);
     console.log('変換後の createdAt:', createdAt);
     
-    const workout = {
+    const workout: Workout = {
       id: docSnap.id,
       userId: data.userId || userId,
-      date: date.toISOString(), // Workout 型に合わせて文字列に変換
-      exercises: data.exercises || [],
+      date: date.toISOString(),
+      exercises: (data.exercises as unknown as WorkoutExercise[]) || [],
       notes: data.notes || '',
       totalVolume: data.totalVolume || 0,
-      createdAt: createdAt.toISOString(),
-      updatedAt: updatedAt.toISOString(),
+      createdAt,
+      updatedAt,
       startTime: data.startTime ? convertToDate(data.startTime) : undefined,
       endTime: data.endTime ? convertToDate(data.endTime) : undefined,
       duration: typeof data.duration === 'number' ? data.duration : undefined
-    } as unknown as Workout; // 型アサーションを使用
+    };
     
     console.log('3. ワークアウトデータを返します:', JSON.stringify(workout, null, 2));
     console.log('=== getWorkoutById 完了 ===');
@@ -703,7 +726,7 @@ export const getRecentWorkouts = async (userId: string): Promise<Workout[]> => {
     console.log(`2. 取得したドキュメント数: ${querySnapshot.docs.length}`);
     
     const workouts = querySnapshot.docs.slice(0, 5).map((doc, index) => {
-      const data = doc.data();
+      const data = doc.data() as WorkoutDoc;
       
       // デバッグ用ログ
       console.log(`\n=== 最近のワークアウト ${index + 1} ===`);
@@ -718,16 +741,17 @@ export const getRecentWorkouts = async (userId: string): Promise<Workout[]> => {
       
       console.log('変換後の date:', date);
       
-      return {
+      const workout: Workout = {
         id: doc.id,
         userId: data.userId || userId,
-        date: date.toISOString(), // Workout 型に合わせて文字列に変換
-        exercises: data.exercises || [],
+        date: date.toISOString(),
+        exercises: (data.exercises as unknown as WorkoutExercise[]) || [],
         notes: data.notes || '',
         totalVolume: data.totalVolume || 0,
-        createdAt: createdAt.toISOString(),
-        updatedAt: updatedAt.toISOString()
-      } as unknown as Workout; // 型アサーションを使用
+        createdAt,
+        updatedAt
+      };
+      return workout;
     });
     
     console.log('3. 最近のワークアウトの取得が完了しました');
@@ -809,16 +833,15 @@ export const getThisWeeksStats = async (
     const volumeByType = createInitialVolumeByType();
     const daySet = new Set<string>();
     const exerciseSet = new Set<string>();
-    let thisWeekWorkouts: any[] = [];
     
     // 今週のデータをフィルタリング
-    querySnapshot.docs.forEach((doc, index) => {
-      const data = doc.data();
+    querySnapshot.docs.forEach((doc) => {
+      const data = doc.data() as WorkoutDoc;
       const workoutDate = convertToDate(data.date);
       
       // デバッグ用に最初の数件の日付をログに出力
-      if (index < 5) {
-        console.log(`  ワークアウト ${index + 1}:`, {
+      if (querySnapshot.docs.indexOf(doc) < 5) {
+        console.log(`  ワークアウト ${querySnapshot.docs.indexOf(doc) + 1}:`, {
           id: doc.id,
           date: workoutDate.toISOString(),
           dateStr: workoutDate.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }),
@@ -851,7 +874,7 @@ export const getThisWeeksStats = async (
         if (Array.isArray(data.exercises)) {
           let warmupSecondsFromMenus = 0;
           let cooldownSecondsFromMenus = 0;
-          data.exercises.forEach((exercise: any) => {
+          data.exercises.forEach((exercise: Partial<WorkoutExercise> & { sets?: ExerciseSet[]; menuName?: string; name?: string; menuType?: MenuType }) => {
             if (exercise && typeof exercise.name === 'string' && exercise.name.trim().length > 0) {
               exerciseSet.add(exercise.name.trim());
             }
@@ -862,11 +885,11 @@ export const getThisWeeksStats = async (
             }
 
             // メニュー名ベースのウォームアップ/クールダウン（timeメニューのみ、秒→分）
-            const menuName: string = (exercise as any).menuName ?? (exercise as any).name ?? '';
-            const isTimeMenu = (exercise as any).menuType === 'time' || resolveMenuType(exercise) === 'time';
+            const menuName: string = exercise.menuName ?? exercise.name ?? '';
+            const isTimeMenu = exercise.menuType === 'time' || resolveMenuType(exercise) === 'time';
             if (typeof menuName === 'string' && menuName.length > 0 && isTimeMenu) {
               const secondsSum = Array.isArray(exercise?.sets)
-                ? exercise.sets.reduce((sec: number, set: any) => {
+                ? exercise.sets.reduce((sec: number, set: ExerciseSet) => {
                     const s = Number(set?.time ?? set?.duration);
                     return Number.isFinite(s) && s > 0 ? sec + s : sec;
                   }, 0)
@@ -891,14 +914,6 @@ export const getThisWeeksStats = async (
             cooldownTotalSeconds += cooldownSecondsFromMenus;
           }
         }
-        
-        thisWeekWorkouts.push({
-          id: doc.id,
-          date: workoutDate,
-          volume: workoutVolume,
-          warmupDuration: typeof data.warmupDuration === 'number' ? data.warmupDuration : 0,
-          cooldownDuration: typeof data.cooldownDuration === 'number' ? data.cooldownDuration : 0
-        });
       }
     });
 

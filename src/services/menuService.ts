@@ -27,20 +27,39 @@ const DEFAULT_MENUS: Array<Pick<Menu, 'name' | 'category' | 'type' | 'hasSides'>
   { name: '腹筋', category: ['体幹'], type: 'time', hasSides: false }
 ];
 
-const removeUndefined = (obj: any): any => {
+const removeUndefined = <T>(obj: T): T => {
   if (Array.isArray(obj)) {
-    return obj.map(item => removeUndefined(item)).filter(item => item !== undefined);
+    return obj.map(item => removeUndefined(item)).filter(item => item !== undefined) as unknown as T;
   }
 
   if (obj !== null && typeof obj === 'object') {
-    return Object.fromEntries(
-      Object.entries(obj)
-        .filter(([_, v]) => v !== undefined)
-        .map(([k, v]) => [k, removeUndefined(v)])
-    );
+    const entries = Object.entries(obj as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => [k, removeUndefined(v as unknown)] as const);
+    return Object.fromEntries(entries) as T;
   }
 
   return obj;
+};
+
+type FirestoreTimestampLike =
+  | Timestamp
+  | { seconds: number; nanoseconds?: number }
+  | string
+  | number
+  | Date
+  | null
+  | undefined;
+
+type MenuDoc = {
+  name?: string;
+  category?: string[];
+  type?: Menu['type'];
+  hasSides?: boolean;
+  order?: number;
+  userId?: string;
+  createdAt?: FirestoreTimestampLike;
+  updatedAt?: FirestoreTimestampLike;
 };
 
 // Batch update order for menus
@@ -61,14 +80,15 @@ export const updateMenusOrder = async (userId: string, menus: Menu[]): Promise<v
   }
 };
 
-const convertToDate = (timestamp: any): Date => {
+const convertToDate = (timestamp: FirestoreTimestampLike): Date => {
   try {
-    if (timestamp && typeof timestamp.toDate === 'function') {
-      return timestamp.toDate();
+    if (timestamp && typeof (timestamp as Timestamp).toDate === 'function') {
+      return (timestamp as Timestamp).toDate();
     }
 
-    if (timestamp && typeof timestamp === 'object' && 'seconds' in timestamp) {
-      return new Date(timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000);
+    if (timestamp && typeof timestamp === 'object' && 'seconds' in (timestamp as { seconds: number })) {
+      const t = timestamp as { seconds: number; nanoseconds?: number };
+      return new Date(t.seconds * 1000 + (t.nanoseconds || 0) / 1000000);
     }
 
     if (typeof timestamp === 'string') {
@@ -93,7 +113,7 @@ const convertToDate = (timestamp: any): Date => {
   }
 };
 
-const normalizeDateField = (value: any, fieldName: string): Timestamp | undefined => {
+const normalizeDateField = (value: FirestoreTimestampLike, fieldName: string): Timestamp | undefined => {
   if (value === undefined || value === null) {
     return undefined;
   }
@@ -185,7 +205,7 @@ export const getMenus = async (userId: string): Promise<Menu[]> => {
     console.log(`取得したドキュメント数: ${querySnapshot.docs.length}`);
 
     const menus = querySnapshot.docs.map((docSnap, index) => {
-      const data = docSnap.data();
+      const data = docSnap.data() as MenuDoc;
 
       console.log(`\n=== メニュー ${index + 1} ===`);
       console.log('ドキュメントID:', docSnap.id);
@@ -193,17 +213,17 @@ export const getMenus = async (userId: string): Promise<Menu[]> => {
       console.log('category:', data.category);
       console.log('order:', data.order);
 
-      const createdAt = convertToDate(data.createdAt);
+      const createdAt = convertToDate(data.createdAt ?? Timestamp.now());
       const updatedAt = data.updatedAt ? convertToDate(data.updatedAt) : createdAt;
 
       const menu: Menu = {
         id: docSnap.id,
-        name: data.name || '',
-        category: Array.isArray(data.category) ? data.category : [],
-        type: (data.type as Menu['type']) ?? 'weight',
+        name: data.name ?? '',
+        category: Array.isArray(data.category) ? (data.category as string[]) : [],
+        type: data.type ?? 'weight',
         hasSides: Boolean(data.hasSides),
-        order: typeof data.order === 'number' ? data.order : 0,
-        userId: data.userId || userId,
+        order: typeof data.order === 'number' ? (data.order as number) : 0,
+        userId: data.userId ?? userId,
         createdAt,
         updatedAt
       };
@@ -237,17 +257,17 @@ export const getMenuById = async (userId: string, menuId: string): Promise<Menu 
 
     console.log('2. 取得したドキュメントデータ:', data);
 
-    const createdAt = convertToDate(data.createdAt);
+    const createdAt = convertToDate(data.createdAt ?? Timestamp.now());
     const updatedAt = data.updatedAt ? convertToDate(data.updatedAt) : createdAt;
 
     const menu: Menu = {
       id: docSnap.id,
-      name: data.name || '',
-      category: Array.isArray(data.category) ? data.category : [],
-      type: (data.type as Menu['type']) ?? 'weight',
+      name: data.name ?? '',
+      category: Array.isArray(data.category) ? (data.category as string[]) : [],
+      type: data.type ?? 'weight',
       hasSides: Boolean(data.hasSides),
-      order: typeof data.order === 'number' ? data.order : 0,
-      userId: data.userId || userId,
+      order: typeof data.order === 'number' ? (data.order as number) : 0,
+      userId: data.userId ?? userId,
       createdAt,
       updatedAt
     };
@@ -272,7 +292,7 @@ export const updateMenu = async (
     console.log('1. 更新対象:', { userId, menuId });
     console.log('2. 受信した更新データ:', JSON.stringify(menuData, null, 2));
 
-    const updateData: any = { ...menuData };
+    const updateData: Record<string, unknown> = { ...menuData };
 
     if (menuData.createdAt !== undefined) {
       const createdAtTimestamp = normalizeDateField(menuData.createdAt, 'createdAt');
@@ -341,7 +361,8 @@ export const deleteAllMenus = async (userId: string): Promise<void> => {
 
     const batch = writeBatch(db);
     snapshot.forEach(menuDoc => {
-      console.log('  削除予定メニュー:', menuDoc.id, menuDoc.data()?.name);
+      const data = menuDoc.data() as { name?: string };
+      console.log('  削除予定メニュー:', menuDoc.id, data?.name);
       batch.delete(menuDoc.ref);
     });
 

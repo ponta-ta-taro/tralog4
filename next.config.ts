@@ -1,9 +1,7 @@
-﻿import type { NextConfig } from "next";
+import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  // eslint設定を削除（デフォルトに戻す）
 };
 
 export default nextConfig;

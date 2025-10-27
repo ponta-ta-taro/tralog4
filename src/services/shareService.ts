@@ -36,22 +36,38 @@ const generatePassword = (): string => {
   return String(value);
 };
 
-const convertShareDoc = (data: any): ShareRecord | null => {
+type FirestoreTimestampLike = Timestamp | string | number | Date | null | undefined;
+
+type ShareDoc = {
+  shareId?: string;
+  userId?: string;
+  password?: string;
+  createdAt?: FirestoreTimestampLike;
+  expiresAt?: FirestoreTimestampLike;
+  isActive?: unknown;
+  updatedAt?: FirestoreTimestampLike;
+};
+
+const toDateSafe = (value: FirestoreTimestampLike): Date | null => {
+  if (!value) return null;
+  if (value instanceof Timestamp) return value.toDate();
+  if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+  const date = new Date(value);
+  return isNaN(date.getTime()) ? null : date;
+};
+
+const convertShareDoc = (data?: ShareDoc): ShareRecord | null => {
   if (!data) {
     return null;
   }
-  const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : new Date(data.createdAt);
-  const expiresAt = data.expiresAt instanceof Timestamp ? data.expiresAt.toDate() : new Date(data.expiresAt);
-  const updatedAt = data.updatedAt
-    ? data.updatedAt instanceof Timestamp
-      ? data.updatedAt.toDate()
-      : new Date(data.updatedAt)
-    : undefined;
+  const createdAt = toDateSafe(data.createdAt) ?? new Date();
+  const expiresAt = toDateSafe(data.expiresAt) ?? new Date(Date.now() + SHARE_DURATION_MS);
+  const updatedAt = data.updatedAt ? toDateSafe(data.updatedAt) ?? undefined : undefined;
 
   return {
-    shareId: data.shareId,
-    userId: data.userId,
-    password: data.password,
+    shareId: data.shareId ?? '',
+    userId: data.userId ?? '',
+    password: data.password ?? '',
     createdAt,
     expiresAt,
     isActive: Boolean(data.isActive),
@@ -100,7 +116,7 @@ export const getShare = async (shareId: string): Promise<ShareRecord | null> => 
   if (!snapshot.exists()) {
     return null;
   }
-  return convertShareDoc(snapshot.data());
+  return convertShareDoc(snapshot.data() as ShareDoc | undefined);
 };
 
 export const verifyShare = async (shareId: string, password: string): Promise<ShareRecord | null> => {
@@ -134,6 +150,6 @@ export const getUserShares = async (userId: string): Promise<ShareRecord[]> => {
   const q = query(sharesRef, where('userId', '==', userId));
   const snapshot = await getDocs(q);
   return snapshot.docs
-    .map(docSnap => convertShareDoc(docSnap.data()))
+    .map(docSnap => convertShareDoc(docSnap.data() as ShareDoc | undefined))
     .filter((share): share is ShareRecord => Boolean(share));
 };
