@@ -91,27 +91,31 @@ const createDefaultSet = (type: Menu['type'] = 'weight'): ExerciseSet => {
     case 'bodyweight':
       return {
         id: generateId(),
-        reps: 12
+        reps: 12,
+        completed: false
       };
     case 'time': {
       const seconds = 60;
       return {
         id: generateId(),
         time: seconds,
-        duration: seconds
+        duration: seconds,
+        completed: false
       };
     }
     case 'distance':
       return {
         id: generateId(),
-        distance: 1
+        distance: 1,
+        completed: false
       };
     case 'weight':
     default:
       return {
         id: generateId(),
         weight: 20,
-        reps: 10
+        reps: 10,
+        completed: false
       };
   }
 };
@@ -683,7 +687,8 @@ export default function SessionPage() {
         reps: typeof s.reps === 'number' ? s.reps : undefined,
         time: typeof s.time === 'number' ? s.time : (typeof s.duration === 'number' ? s.duration : undefined),
         duration: typeof s.duration === 'number' ? s.duration : undefined,
-        distance: typeof s.distance === 'number' ? s.distance : undefined
+        distance: typeof s.distance === 'number' ? s.distance : undefined,
+        completed: false
       }));
 
       const menuType: Menu['type'] = ex?.menuType ?? type;
@@ -719,7 +724,8 @@ export default function SessionPage() {
             : undefined,
         time: currentMenuType === 'time' ? lastSet?.time ?? lastSet?.duration ?? 60 : undefined,
         duration: currentMenuType === 'time' ? lastSet?.duration ?? lastSet?.time ?? 60 : undefined,
-        distance: currentMenuType === 'distance' ? lastSet?.distance ?? 1 : undefined
+        distance: currentMenuType === 'distance' ? lastSet?.distance ?? 1 : undefined,
+        completed: false
       };
       return [...prev, newSet];
     });
@@ -770,6 +776,16 @@ export default function SessionPage() {
               time: seconds,
               duration: seconds
             }
+          : set
+      )
+    );
+  };
+
+  const handleToggleComplete = (setId: string) => {
+    setSets(prev =>
+      prev.map(set =>
+        set.id === setId
+          ? { ...set, completed: !set.completed }
           : set
       )
     );
@@ -1144,8 +1160,8 @@ export default function SessionPage() {
                               onChange={event =>
                                 handleNumericInputChange(set.id, 'weight', event.target.value)
                               }
-                              className="mt-1"
-                              disabled={!selectedMenuId || !sessionStartTime || !warmupRecorded}
+                              className={`mt-1 ${set.completed ? 'opacity-60' : ''}`}
+                              disabled={!selectedMenuId || !sessionStartTime || !warmupRecorded || Boolean(set.completed)}
                             />
                           </div>
                           <div>
@@ -1158,8 +1174,8 @@ export default function SessionPage() {
                               onChange={event =>
                                 handleNumericInputChange(set.id, 'reps', event.target.value)
                               }
-                              className="mt-1"
-                              disabled={!selectedMenuId || !sessionStartTime || !warmupRecorded}
+                              className={`mt-1 ${set.completed ? 'opacity-60' : ''}`}
+                              disabled={!selectedMenuId || !sessionStartTime || !warmupRecorded || Boolean(set.completed)}
                             />
                           </div>
                         </>
@@ -1176,8 +1192,8 @@ export default function SessionPage() {
                             onChange={event =>
                               handleNumericInputChange(set.id, 'reps', event.target.value)
                             }
-                            className="mt-1"
-                            disabled={!selectedMenuId || !sessionStartTime || !warmupRecorded}
+                            className={`mt-1 ${set.completed ? 'opacity-60' : ''}`}
+                            disabled={!selectedMenuId || !sessionStartTime || !warmupRecorded || Boolean(set.completed)}
                           />
                         </div>
                       )}
@@ -1190,8 +1206,8 @@ export default function SessionPage() {
                             type="text"
                             value={formatSecondsForInput(set.time ?? set.duration)}
                             onChange={event => handleTimeChange(set.id, event.target.value)}
-                            className="mt-1"
-                            disabled={!selectedMenuId}
+                            className={`mt-1 ${set.completed ? 'opacity-60' : ''}`}
+                            disabled={!selectedMenuId || Boolean(set.completed)}
                           />
                         </div>
                       )}
@@ -1208,13 +1224,22 @@ export default function SessionPage() {
                             onChange={event =>
                               handleNumericInputChange(set.id, 'distance', event.target.value)
                             }
-                            className="mt-1"
-                            disabled={!selectedMenuId}
+                            className={`mt-1 ${set.completed ? 'opacity-60' : ''}`}
+                            disabled={!selectedMenuId || Boolean(set.completed)}
                           />
                         </div>
                       )}
 
-                      <div className="flex items-end justify-end">
+                      <div className="flex items-end justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => handleToggleComplete(set.id)}
+                          className={set.completed ? 'bg-gray-400 hover:bg-gray-500' : 'bg-green-600 hover:bg-green-700'}
+                          aria-label={`セット${index + 1}を${set.completed ? '取消' : '完了'}`}
+                        >
+                          {set.completed ? '取消' : '完了'}
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"

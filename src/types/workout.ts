@@ -10,6 +10,7 @@ export interface ExerciseSet {
   side?: 'left' | 'right' | 'both';
   time?: number;
   distance?: number;
+  completed?: boolean;
 }
 
 export interface WorkoutExercise {
