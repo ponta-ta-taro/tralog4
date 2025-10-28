@@ -1021,11 +1021,8 @@ export default function SessionPage() {
               </div>
 
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center">
                   <h3 className="text-sm font-medium">セット</h3>
-                  <Button type="button" onClick={handleAddSet} variant="outline" size="sm" disabled={!selectedMenuId}>
-                    <Plus className="mr-1 h-4 w-4" /> セットを追加
-                  </Button>
                 </div>
 
                 <div className="space-y-3">
@@ -1131,6 +1128,12 @@ export default function SessionPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+
+                <div>
+                  <Button type="button" onClick={handleAddSet} variant="outline" size="sm" disabled={!selectedMenuId}>
+                    <Plus className="mr-1 h-4 w-4" /> セットを追加
+                  </Button>
                 </div>
               </div>
 
