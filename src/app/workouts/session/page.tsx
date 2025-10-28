@@ -329,6 +329,8 @@ export default function SessionPage() {
   const [warmupStarted, setWarmupStarted] = useState(false);
   const [workoutRecorded, setWorkoutRecorded] = useState(false);
   const [cooldownStarted, setCooldownStarted] = useState(false);
+  // cooldown section availability is controlled by explicit end-workout action
+  const [cooldownAvailable, setCooldownAvailable] = useState(false);
   // recorded snapshot seconds (persisted when pressing 記録)
   const [recordedWarmupSeconds, setRecordedWarmupSeconds] = useState(0);
   const [recordedCooldownSeconds, setRecordedCooldownSeconds] = useState(0);
@@ -500,6 +502,7 @@ export default function SessionPage() {
     setWarmupRecorded(false);
     setWorkoutRecorded(false);
     setCooldownStarted(false);
+    setCooldownAvailable(false);
     // reset timers and recorded snapshots
     setWarmupTimerSeconds(0);
     setCooldownTimerSeconds(0);
@@ -794,6 +797,7 @@ export default function SessionPage() {
     setCooldownTimerSeconds(0);
     setCooldownSeconds(0);
     setCooldownRecorded(false);
+    setCooldownAvailable(false);
     // メニュー
     setSelectedMenuId('');
     setCurrentMenuType('weight');
@@ -839,7 +843,7 @@ export default function SessionPage() {
                 </p>
               )}
             </div>
-            <div className="text-6xl font-bold tracking-tight">
+            <div className="text-3xl font-bold tracking-tight">
               {formattedElapsed}
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -899,7 +903,7 @@ export default function SessionPage() {
           {!sessionStartTime && (
             <div className="text-sm text-muted-foreground">セッションを開始してください</div>
           )}
-          <div className="text-4xl font-bold tracking-tight">{formatTime(warmupTimerSeconds)}</div>
+          <div className="text-2xl font-bold tracking-tight">{formatTime(warmupTimerSeconds)}</div>
           {(warmupRecorded || warmupSeconds > 0) && (
             <div className="text-sm text-emerald-600">✅ 記録: {formatTime(warmupSeconds)}</div>
           )}
@@ -910,16 +914,14 @@ export default function SessionPage() {
         </CardContent>
       </Card>
 
-      {/* Cooldown Timer Card (always visible) */}
-      <Card className={`${(!sessionStartTime || savedExercises.length === 0) ? 'opacity-50' : ''}`}>
+      {/* Cooldown Timer Card (visible after ending workout) */}
+      {cooldownAvailable && (
+      <Card className={`${(!sessionStartTime) ? 'opacity-50' : ''}`}>
         <CardHeader>
           <CardTitle>
             クールダウンタイマー
             {!sessionStartTime && (
               <span className="text-sm text-red-500 ml-2">※ セッション開始後に利用可能</span>
-            )}
-            {sessionStartTime && savedExercises.length === 0 && (
-              <span className="text-sm text-red-500 ml-2">※ ワークアウト記録後に利用可能</span>
             )}
           </CardTitle>
         </CardHeader>
@@ -927,16 +929,17 @@ export default function SessionPage() {
           {!sessionStartTime && (
             <div className="text-sm text-muted-foreground">セッションを開始してください</div>
           )}
-          <div className="text-4xl font-bold tracking-tight">{formatTime(cooldownTimerSeconds)}</div>
+          <div className="text-2xl font-bold tracking-tight">{formatTime(cooldownTimerSeconds)}</div>
           {(cooldownRecorded || cooldownSeconds > 0) && (
             <div className="text-sm text-emerald-600">✅ 記録: {formatTime(cooldownSeconds)}</div>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" onClick={startCooldown} disabled={!sessionStartTime || !warmupRecorded || savedExercises.length === 0 || isCooldownRunning}>開始</Button>
+            <Button type="button" onClick={startCooldown} disabled={!sessionStartTime || !cooldownAvailable || isCooldownRunning}>開始</Button>
             <Button type="button" className="bg-emerald-600 hover:bg-emerald-700" onClick={handleCooldownRecord} disabled={!sessionStartTime || !isCooldownRunning}>記録</Button>
           </div>
         </CardContent>
       </Card>
+      )}
 
       {/* Existing menu and set editor section remains below */}
 
@@ -981,11 +984,24 @@ export default function SessionPage() {
                 <p className="text-2xl font-semibold">{formattedCurrentLap}</p>
               </div>
 
+              <div className="pt-2 border-t">
+                <div className="flex justify-center">
+                  <Button
+                    type="button"
+                    className="bg-orange-600 hover:bg-orange-700"
+                    onClick={() => setCooldownAvailable(true)}
+                    disabled={!sessionStartTime || savedExercises.length === 0 || cooldownAvailable}
+                  >
+                    ワークアウトを終了する
+                  </Button>
+                </div>
+              </div>
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <Label>メニュー</Label>
                   <Select value={selectedMenuId} onValueChange={handleMenuSelect} disabled={isMenuLoading || !menus.length || !sessionStartTime || !warmupRecorded}>
-                    <SelectTrigger className="mt-1">
+                    <SelectTrigger className="mt-1 h-14 text-lg">
                       <SelectValue placeholder={isMenuLoading ? '読み込み中...' : 'メニューを選択'} />
                     </SelectTrigger>
                     <SelectContent>
