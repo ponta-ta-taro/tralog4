@@ -681,12 +681,12 @@ export default function SessionPage() {
         id: generateId(),
         weight: typeof s.weight === 'number' ? s.weight : undefined,
         reps: typeof s.reps === 'number' ? s.reps : undefined,
-        time: typeof (s as any).time === 'number' ? (s as any).time : (typeof (s as any).duration === 'number' ? (s as any).duration : undefined),
-        duration: typeof (s as any).duration === 'number' ? (s as any).duration : undefined,
-        distance: typeof (s as any).distance === 'number' ? (s as any).distance : undefined
+        time: typeof s.time === 'number' ? s.time : (typeof s.duration === 'number' ? s.duration : undefined),
+        duration: typeof s.duration === 'number' ? s.duration : undefined,
+        distance: typeof s.distance === 'number' ? s.distance : undefined
       }));
 
-      const menuType: Menu['type'] = (ex?.menuType as any) || type;
+      const menuType: Menu['type'] = ex?.menuType ?? type;
       const volume = mappedSets.length ? computeVolumeForSets(mappedSets, menuType) : 0;
 
       setPrevRecord({ date: new Date(found.date), sets: mappedSets, totalVolume: volume, menuType });
@@ -1108,11 +1108,11 @@ export default function SessionPage() {
                       <div className="mt-2 space-y-1">
                         {prevRecord.sets.map((s, idx) => (
                           <div key={idx}>
-                            {formatSetSummary(s, idx, prevRecord.menuType as any)}
+                            {formatSetSummary(s, idx, prevRecord.menuType)}
                           </div>
                         ))}
                       </div>
-                      <p className="mt-2">合計: {prevRecord.sets.length}セット、総ボリューム: {formatVolumeLabel(prevRecord.totalVolume, prevRecord.menuType as any)}</p>
+                      <p className="mt-2">合計: {prevRecord.sets.length}セット、総ボリューム: {formatVolumeLabel(prevRecord.totalVolume, prevRecord.menuType)}</p>
                     </div>
                   ) : (
                     <div>まだ記録がありません</div>
