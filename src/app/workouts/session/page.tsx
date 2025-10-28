@@ -1131,7 +1131,7 @@ export default function SessionPage() {
                 </div>
 
                 <div>
-                  <Button type="button" onClick={handleAddSet} variant="outline" size="sm" disabled={!selectedMenuId}>
+                  <Button type="button" onClick={handleAddSet} size="sm" disabled={!selectedMenuId} className="bg-green-600 hover:bg-green-700 text-white">
                     <Plus className="mr-1 h-4 w-4" /> セットを追加
                   </Button>
                 </div>
