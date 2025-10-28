@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { getMenus } from '@/services/menuService';
-import { createWorkout } from '@/services/workoutService';
+import { createWorkout, getRecentWorkouts } from '@/services/workoutService';
 import type { Menu, MenuType } from '@/types/menu';
 import type { Workout, WorkoutExercise, ExerciseSet } from '@/types/workout';
 import { Button } from '@/components/ui/button';
@@ -342,6 +342,16 @@ export default function SessionPage() {
 
   const [savedExercises, setSavedExercises] = useState<WorkoutExercise[]>([]);
 
+  // Previous workout state for selected menu
+  const [prevLoading, setPrevLoading] = useState(false);
+  const [prevError, setPrevError] = useState<string | null>(null);
+  const [prevRecord, setPrevRecord] = useState<{
+    date: Date | null;
+    sets: ExerciseSet[];
+    totalVolume: number;
+    menuType: Menu['type'];
+  } | null>(null);
+
   useEffect(() => {
     if (!user) {
       setIsRunning(false);
@@ -632,6 +642,69 @@ export default function SessionPage() {
     setNotes('');
     setSuccessMessage(null);
     setSaveError(null);
+
+    // fetch previous workout for this menu (excluding today) and prefill sets
+    if (!menu) {
+      setPrevRecord(null);
+      return;
+    }
+    void loadPreviousForMenu(menu.name, type);
+  };
+
+  const loadPreviousForMenu = async (menuName: string, type: Menu['type']) => {
+    if (!user) {
+      setPrevRecord(null);
+      return;
+    }
+    setPrevLoading(true);
+    setPrevError(null);
+    try {
+      const workouts = await getRecentWorkouts(user.uid);
+      const todayStr = todayISODate();
+      // find the latest workout (excluding today) having the menu name
+      const found = workouts.find(w => {
+        const d = (w.date ?? '').split('T')[0];
+        if (d === todayStr) return false;
+        return Array.isArray(w.exercises) && w.exercises.some(ex => ex?.name === menuName);
+      });
+
+      if (!found) {
+        setPrevRecord({ date: null, sets: [], totalVolume: 0, menuType: type });
+        setPrevLoading(false);
+        // keep default one set
+        return;
+      }
+
+      const ex = found.exercises.find(e => e?.name === menuName);
+      const prevSetsRaw = ex?.sets ?? [];
+      const mappedSets: ExerciseSet[] = prevSetsRaw.map(s => ({
+        id: generateId(),
+        weight: typeof s.weight === 'number' ? s.weight : undefined,
+        reps: typeof s.reps === 'number' ? s.reps : undefined,
+        time: typeof (s as any).time === 'number' ? (s as any).time : (typeof (s as any).duration === 'number' ? (s as any).duration : undefined),
+        duration: typeof (s as any).duration === 'number' ? (s as any).duration : undefined,
+        distance: typeof (s as any).distance === 'number' ? (s as any).distance : undefined
+      }));
+
+      const menuType: Menu['type'] = (ex?.menuType as any) || type;
+      const volume = mappedSets.length ? computeVolumeForSets(mappedSets, menuType) : 0;
+
+      setPrevRecord({ date: new Date(found.date), sets: mappedSets, totalVolume: volume, menuType });
+
+      // auto-generate same number of inputs with defaults
+      if (mappedSets.length > 0) {
+        setCurrentMenuType(menuType);
+        setSets(mappedSets);
+      } else {
+        setSets([createDefaultSet(menuType)]);
+      }
+    } catch (err) {
+      console.error('前回データの取得に失敗しました:', err);
+      setPrevError('前回の記録の取得に失敗しました。');
+      setPrevRecord(null);
+    } finally {
+      setPrevLoading(false);
+    }
   };
 
   const handleAddSet = () => {
@@ -1019,6 +1092,33 @@ export default function SessionPage() {
                   )}
                 </div>
               </div>
+
+              {/* Previous record summary */}
+              {selectedMenuId && (
+                <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+                  {prevLoading ? (
+                    <div className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> 前回の記録を読み込み中...</div>
+                  ) : prevError ? (
+                    <div className="text-destructive">{prevError}</div>
+                  ) : prevRecord && prevRecord.sets.length > 0 ? (
+                    <div>
+                      <p className="font-medium text-foreground/80">
+                        📊 前回の記録（{(() => { const d = prevRecord.date; if (!d) return '--/--'; const mm = String(d.getMonth() + 1).padStart(2, '0'); const dd = String(d.getDate()).padStart(2, '0'); return `${mm}/${dd}`; })()}）
+                      </p>
+                      <div className="mt-2 space-y-1">
+                        {prevRecord.sets.map((s, idx) => (
+                          <div key={idx}>
+                            {formatSetSummary(s, idx, prevRecord.menuType as any)}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-2">合計: {prevRecord.sets.length}セット、総ボリューム: {formatVolumeLabel(prevRecord.totalVolume, prevRecord.menuType as any)}</p>
+                    </div>
+                  ) : (
+                    <div>まだ記録がありません</div>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-4">
                 <div className="flex items-center">
