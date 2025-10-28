@@ -23,10 +23,9 @@ import {
 import { Loader2, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const SHARE_BASE_URL = 'https://tralog4.com/share';
-
 export default function ShareManagementPage() {
   const { user } = useAuth();
+  const shareBaseUrl = typeof window !== 'undefined' ? `${window.location.origin}/share` : '/share';
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdShare, setCreatedShare] = useState<ShareRecord | null>(null);
@@ -107,10 +106,11 @@ export default function ShareManagementPage() {
     }
   };
 
-  const shareUrl = createdShare ? `${SHARE_BASE_URL}/${createdShare.shareId}` : '';
+  const shareUrl = createdShare ? `${shareBaseUrl}/${createdShare.shareId}` : '';
 
   const maskedShareUrl = useCallback((shareId: string) => {
-    const full = `${SHARE_BASE_URL}/${shareId}`;
+    const base = typeof window !== 'undefined' ? `${window.location.origin}/share` : '/share';
+    const full = `${base}/${shareId}`;
     if (full.length <= 28) {
       return full;
     }
@@ -159,7 +159,7 @@ export default function ShareManagementPage() {
   const formattedShares = useMemo(() => {
     return shares.map(share => ({
       ...share,
-      shareUrl: `${SHARE_BASE_URL}/${share.shareId}`,
+      shareUrl: `${shareBaseUrl}/${share.shareId}`,
       createdLabel: share.createdAt
         ? share.createdAt.toLocaleString('ja-JP', {
             year: 'numeric',
@@ -177,7 +177,7 @@ export default function ShareManagementPage() {
           })
         : '-'
     }));
-  }, [shares]);
+  }, [shares, shareBaseUrl]);
 
   return (
     <div className="container mx-auto space-y-6 px-4 py-8">
