@@ -583,7 +583,7 @@ export default function EditWorkoutPage() {
                             <Input
                               type="number"
                               min="0"
-                              step="0.5"
+                              step="0.1"
                               value={set.weight ?? ''}
                               onChange={event => updateSet(exercise.id, set.id, { weight: event.target.value ? parseFloat(event.target.value) : 0 })}
                               className="w-24 text-right"
