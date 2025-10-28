@@ -1235,7 +1235,7 @@ export default function SessionPage() {
                           type="button"
                           size="sm"
                           onClick={() => handleToggleComplete(set.id)}
-                          className={set.completed ? 'bg-gray-400 hover:bg-gray-500' : 'bg-green-600 hover:bg-green-700'}
+                          className={set.completed ? 'bg-gray-400 hover:bg-gray-500 text-white' : 'bg-pink-200 hover:bg-pink-300 text-gray-700'}
                           aria-label={`セット${index + 1}を${set.completed ? '取消' : '完了'}`}
                         >
                           {set.completed ? '取消' : '完了'}
