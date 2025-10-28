@@ -647,7 +647,7 @@ export default function EditWorkoutPage() {
               </table>
 
               <div className="mt-4 flex items-center justify-between">
-                <Button type="button" variant="outline" size="sm" onClick={() => addSet(exercise.id)}>
+                <Button type="button" size="sm" onClick={() => addSet(exercise.id)} className="bg-green-600 hover:bg-green-700 text-white">
                   <Plus className="mr-1 h-4 w-4" /> セットを追加
                 </Button>
                 {exercise.type === 'weight' && (
