@@ -39,7 +39,7 @@ export default function AnalyticsPage() {
   const router = useRouter();
   const [menus, setMenus] = useState<Menu[]>([]);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
-  const [selectedMenuId, setSelectedMenuId] = useState<string>('');
+  const [selectedMenuId, setSelectedMenuId] = useState<string>('all');
   const [isMenusLoading, setIsMenusLoading] = useState(false);
   const [isWorkoutsLoading, setIsWorkoutsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,8 +102,8 @@ export default function AnalyticsPage() {
         setMenus(sortedMenus);
         setWorkouts(fetchedWorkouts);
 
-        const defaultMenu = sortedMenus.find(menu => menu.name === 'ベンチプレス') || sortedMenus[0];
-        setSelectedMenuId(defaultMenu?.id ?? '');
+        // 初期表示は「全メニュー」
+        setSelectedMenuId('all');
       } catch (err) {
         console.error('分析データの取得中にエラーが発生しました:', err);
         setError('分析データの取得に失敗しました。時間をおいて再度お試しください。');
@@ -117,14 +117,14 @@ export default function AnalyticsPage() {
   }, [user]);
 
   const selectedMenu = useMemo(
-    () => menus.find(menu => menu.id === selectedMenuId) ?? null,
+    () => (selectedMenuId === 'all' ? null : menus.find(menu => menu.id === selectedMenuId) ?? null),
     [menus, selectedMenuId]
   );
 
   const selectedMenuType: MenuType = selectedMenu?.type ?? 'weight';
 
   const weeklyChartData = useMemo<WeeklyData[]>(() => {
-    if (!selectedMenu || workouts.length === 0) {
+    if (workouts.length === 0) {
       return [];
     }
 
@@ -139,7 +139,16 @@ export default function AnalyticsPage() {
 
         const weekStart = getWeekStart(workoutDate);
         const weekKey = weekStart.toISOString();
-        const workoutVolume = computeWorkoutVolumeForMenu(workout, selectedMenu);
+
+        let workoutVolume = 0;
+        if (selectedMenu) {
+          // 指定メニューの総量
+          workoutVolume = computeWorkoutVolumeForMenu(workout, selectedMenu);
+        } else {
+          // 全メニュー（重量系のみ）を総量集計（kg）
+          workoutVolume = workout.exercises.reduce((sum, ex) => sum + computeVolumeForSets(ex.sets as ExerciseSet[], 'weight'), 0);
+        }
+
         if (workoutVolume <= 0) {
           return;
         }
@@ -169,27 +178,32 @@ export default function AnalyticsPage() {
   }, [workouts, selectedMenu]);
 
   const chartData = useMemo<ChartData[]>(() => {
-    if (!selectedMenu) {
-      return [];
-    }
-
     try {
       const groupedByDate = new Map<string, number>();
 
       workouts.forEach(workout => {
         const workoutDate = normalizeDate(workout.date);
 
-        workout.exercises
-          .filter(exercise => matchExercise(exercise, selectedMenu))
-          .forEach(exercise => {
-            const metricValue = calculateExerciseMetric(exercise, selectedMenuType);
-            if (metricValue <= 0) {
-              return;
-            }
-
-            const existing = groupedByDate.get(workoutDate);
-            groupedByDate.set(workoutDate, Math.max(existing ?? 0, metricValue));
-          });
+        if (selectedMenu) {
+          // 指定メニュー: その日の最大値
+          workout.exercises
+            .filter(exercise => matchExercise(exercise, selectedMenu))
+            .forEach(exercise => {
+              const metricValue = calculateExerciseMetric(exercise, selectedMenuType);
+              if (metricValue <= 0) {
+                return;
+              }
+              const existing = groupedByDate.get(workoutDate);
+              groupedByDate.set(workoutDate, Math.max(existing ?? 0, metricValue));
+            });
+        } else {
+          // 全メニュー: その日の総重量(kg)を集計
+          const totalWeight = workout.exercises.reduce((sum, ex) => sum + computeVolumeForSets(ex.sets as ExerciseSet[], 'weight'), 0);
+          if (totalWeight > 0) {
+            const existing = groupedByDate.get(workoutDate) ?? 0;
+            groupedByDate.set(workoutDate, existing + totalWeight);
+          }
+        }
       });
 
       const sortedDates = Array.from(groupedByDate.keys()).sort(
@@ -205,7 +219,7 @@ export default function AnalyticsPage() {
       setMenuDataError('グラフ表示用のデータ整形に失敗しました。');
       return [];
     }
-  }, [selectedMenu, workouts]);
+  }, [selectedMenu, selectedMenuType, workouts]);
 
   if (!user) {
     return null;
@@ -217,7 +231,9 @@ export default function AnalyticsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>週間ボリューム推移</CardTitle>
+          <CardTitle>
+            週間ボリューム推移 {selectedMenuType === 'weight' ? '(kg)' : selectedMenuType === 'bodyweight' ? '(回)' : selectedMenuType === 'time' ? '(秒)' : '(km)'}
+          </CardTitle>
           <CardDescription>直近4週間の総{MENU_TYPE_LABELS[selectedMenuType]}量を表示します。</CardDescription>
         </CardHeader>
         <CardContent>
@@ -244,14 +260,10 @@ export default function AnalyticsPage() {
           ) : (
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={weeklyChartData} margin={{ top: 16, right: 24, bottom: 8, left: 0 }}>
+                <BarChart data={weeklyChartData} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="week" stroke="#475569" />
-                  <YAxis
-                    stroke="#475569"
-                    width={100}
-                    label={{ value: VOLUME_LABELS[selectedMenuType], angle: -90, position: 'insideLeft', offset: 10 }}
-                  />
+                  <YAxis stroke="#475569" width={56} />
                   <Tooltip
                     formatter={(value: number) => [formatValueByMenuType(value, selectedMenuType), '総量']}
                     contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))' }}
@@ -271,7 +283,7 @@ export default function AnalyticsPage() {
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <CardTitle>
-                  {selectedMenu ? `${selectedMenu.name} の${MENU_TYPE_LABELS[selectedMenuType]}推移` : 'メニュー推移グラフ'}
+                  {selectedMenu ? `${selectedMenu.name} の${MENU_TYPE_LABELS[selectedMenuType]}推移` : '全メニューの重量推移'}
                 </CardTitle>
                 <CardDescription>
                   トレーニング記録から日別の最大{MENU_TYPE_LABELS[selectedMenuType]}を集計しています。
@@ -286,6 +298,7 @@ export default function AnalyticsPage() {
                   <SelectValue placeholder={isMenusLoading ? '読み込み中...' : 'メニューを選択'} />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem key="all" value="all">全メニュー</SelectItem>
                   {menus.map(menu => (
                     <SelectItem key={menu.id} value={menu.id}>
                       {menu.name}
