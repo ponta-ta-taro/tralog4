@@ -57,7 +57,7 @@ export default function EditWorkoutPage() {
   const [menuError, setMenuError] = useState<string | null>(null);
   const [isMenuLoading, setIsMenuLoading] = useState(false);
 
-  const [date, setDate] = useState<string>('');
+  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [selectedMenuIds, setSelectedMenuIds] = useState<string[]>([]);
