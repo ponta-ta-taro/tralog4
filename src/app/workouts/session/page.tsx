@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { getMenus } from '@/services/menuService';
@@ -346,6 +346,98 @@ export default function SessionPage() {
 
   const [savedExercises, setSavedExercises] = useState<WorkoutExercise[]>([]);
 
+  // Auto-save/restore states
+  interface SavedSessionData {
+    date: string;
+    selectedMenuId: string;
+    sets: ExerciseSet[];
+    notes: string;
+    savedExercises: WorkoutExercise[];
+    sessionStartTime: number | null;
+    warmupTimerSeconds: number;
+    warmupSeconds: number;
+    warmupRecorded: boolean;
+    cooldownTimerSeconds: number;
+    cooldownSeconds: number;
+    cooldownRecorded: boolean;
+    savedAt: number;
+  }
+
+  const [showRestoreDialog, setShowRestoreDialog] = useState(false);
+  const [savedSessionData, setSavedSessionData] = useState<SavedSessionData | null>(null);
+
+  const saveSessionToStorage = useCallback(() => {
+    if (!sessionStartTime) return;
+    const data: SavedSessionData = {
+      date,
+      selectedMenuId,
+      sets,
+      notes,
+      savedExercises,
+      sessionStartTime: sessionStartTime ? sessionStartTime.getTime() : null,
+      warmupTimerSeconds,
+      warmupSeconds,
+      warmupRecorded,
+      cooldownTimerSeconds,
+      cooldownSeconds,
+      cooldownRecorded,
+      savedAt: Date.now()
+    };
+    try {
+      localStorage.setItem('tralog4_session', JSON.stringify(data));
+    } catch (e) {
+      console.error('Failed to save session to storage:', e);
+    }
+  }, [sessionStartTime, date, selectedMenuId, sets, notes, savedExercises, warmupTimerSeconds, warmupSeconds, warmupRecorded, cooldownTimerSeconds, cooldownSeconds, cooldownRecorded]);
+
+  useEffect(() => {
+    if (sessionStartTime) {
+      saveSessionToStorage();
+    }
+  }, [sets, notes, savedExercises, saveSessionToStorage, sessionStartTime]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('tralog4_session');
+      if (!saved) return;
+      const data = JSON.parse(saved) as SavedSessionData;
+      const isRecent = typeof data?.savedAt === 'number' && Date.now() - data.savedAt < 24 * 60 * 60 * 1000;
+      if (isRecent) {
+        setSavedSessionData(data);
+        setShowRestoreDialog(true);
+      } else {
+        localStorage.removeItem('tralog4_session');
+      }
+    } catch (e) {
+      console.error('Failed to parse saved session:', e);
+      localStorage.removeItem('tralog4_session');
+    }
+  }, []);
+
+  const handleRestore = () => {
+    if (!savedSessionData) return;
+    setDate(savedSessionData.date);
+    setSelectedMenuId(savedSessionData.selectedMenuId || '');
+    setSets(savedSessionData.sets || [createDefaultSet('weight')]);
+    setNotes(savedSessionData.notes || '');
+    setSavedExercises(savedSessionData.savedExercises || []);
+    setSessionStartTime(savedSessionData.sessionStartTime ? new Date(savedSessionData.sessionStartTime) : null);
+    setIsRunning(Boolean(savedSessionData.sessionStartTime));
+    setWarmupTimerSeconds(savedSessionData.warmupTimerSeconds || 0);
+    setWarmupSeconds(savedSessionData.warmupSeconds || 0);
+    setWarmupRecorded(Boolean(savedSessionData.warmupRecorded));
+    setCooldownTimerSeconds(savedSessionData.cooldownTimerSeconds || 0);
+    setCooldownSeconds(savedSessionData.cooldownSeconds || 0);
+    setCooldownRecorded(Boolean(savedSessionData.cooldownRecorded));
+    setShowRestoreDialog(false);
+  };
+
+  const handleStartNew = () => {
+    localStorage.removeItem('tralog4_session');
+    setSavedSessionData(null);
+    setShowRestoreDialog(false);
+  };
+
   // Previous workout state for selected menu
   const [prevLoading, setPrevLoading] = useState(false);
   const [prevError, setPrevError] = useState<string | null>(null);
@@ -608,6 +700,7 @@ export default function SessionPage() {
       try {
         await createWorkout(user.uid, workoutPayload);
         setSavedExercises([]);
+        try { localStorage.removeItem('tralog4_session'); } catch {}
         console.log('ワークアウト保存成功');
       } catch (err) {
         console.error('ワークアウト保存失敗:', err);
@@ -929,6 +1022,35 @@ export default function SessionPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* 復元ダイアログ */}
+      {showRestoreDialog && savedSessionData && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 text-2xl">💾</div>
+            <div className="flex-1">
+              <h3 className="font-bold text-blue-900 mb-1">保存されたセッションがあります</h3>
+              <p className="text-sm text-blue-700 mb-3">
+                {new Date(savedSessionData.savedAt).toLocaleString('ja-JP')} に保存されたデータ
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleRestore}
+                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700 transition-colors"
+                >
+                  復元する
+                </button>
+                <button
+                  onClick={handleStartNew}
+                  className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded font-medium hover:bg-gray-300 transition-colors"
+                >
+                  新規開始
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Session Timer Card (primary) */}
       <Card className="border-2 border-primary">
