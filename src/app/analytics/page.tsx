@@ -229,6 +229,30 @@ export default function AnalyticsPage() {
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-6">トレーニング分析</h1>
 
+      {/* メニュー選択（見出し直下） */}
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">表示するメニュー</label>
+        <div className="w-full md:w-64">
+          <Select
+            value={selectedMenuId}
+            onValueChange={value => setSelectedMenuId(value)}
+            disabled={isMenusLoading || menus.length === 0}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder={isMenusLoading ? '読み込み中...' : 'メニューを選択'} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem key="all" value="all">全メニュー</SelectItem>
+              {menus.map(menu => (
+                <SelectItem key={menu.id} value={menu.id}>
+                  {menu.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle>
@@ -266,7 +290,8 @@ export default function AnalyticsPage() {
                   <YAxis stroke="#475569" width={56} />
                   <Tooltip
                     formatter={(value: number) => [formatValueByMenuType(value, selectedMenuType), '総量']}
-                    contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))' }}
+                    contentStyle={{ backgroundColor: 'white', border: '1px solid #ccc', borderRadius: '4px', padding: '8px' }}
+                    labelStyle={{ color: '#333', fontWeight: 'bold' }}
                     cursor={{ strokeDasharray: '3 3' }}
                   />
                   <Bar dataKey="volume" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
@@ -289,23 +314,6 @@ export default function AnalyticsPage() {
                   トレーニング記録から日別の最大{MENU_TYPE_LABELS[selectedMenuType]}を集計しています。
                 </CardDescription>
               </div>
-              <Select
-                value={selectedMenuId}
-                onValueChange={value => setSelectedMenuId(value)}
-                disabled={isMenusLoading || menus.length === 0}
-              >
-                <SelectTrigger className="w-full sm:w-64">
-                  <SelectValue placeholder={isMenusLoading ? '読み込み中...' : 'メニューを選択'} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem key="all" value="all">全メニュー</SelectItem>
-                  {menus.map(menu => (
-                    <SelectItem key={menu.id} value={menu.id}>
-                      {menu.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </CardHeader>
           <CardContent>
@@ -333,17 +341,14 @@ export default function AnalyticsPage() {
                 ) : (
                   <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={chartData} margin={{ top: 16, right: 24, bottom: 8, left: 0 }}>
+                      <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                         <XAxis dataKey="date" stroke="#475569" />
-                        <YAxis
-                          stroke="#475569"
-                          width={100}
-                          label={{ value: Y_AXIS_LABELS[selectedMenuType], angle: -90, position: 'insideLeft', offset: 10 }}
-                        />
+                        <YAxis stroke="#475569" width={56} />
                         <Tooltip
                           formatter={(value: number) => [formatValueByMenuType(value, selectedMenuType), TOOLTIP_TITLES[selectedMenuType]]}
-                          contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))' }}
+                          contentStyle={{ backgroundColor: 'white', border: '1px solid #ccc', borderRadius: '4px', padding: '8px' }}
+                          labelStyle={{ color: '#333', fontWeight: 'bold' }}
                           cursor={{ strokeDasharray: '3 3' }}
                         />
                         <Line
