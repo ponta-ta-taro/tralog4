@@ -354,17 +354,23 @@ export default function SessionPage() {
     notes: string;
     savedExercises: WorkoutExercise[];
     sessionStartTime: number | null;
+    isRunning: boolean;
+    elapsedSeconds: number;
     warmupTimerSeconds: number;
+    isWarmupRunning: boolean;
     warmupSeconds: number;
     warmupRecorded: boolean;
     cooldownTimerSeconds: number;
+    isCooldownRunning: boolean;
     cooldownSeconds: number;
     cooldownRecorded: boolean;
+    currentMenuStartTime: number | null;
     savedAt: number;
   }
 
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const [savedSessionData, setSavedSessionData] = useState<SavedSessionData | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   const saveSessionToStorage = useCallback(() => {
     if (!sessionStartTime) return;
@@ -375,12 +381,17 @@ export default function SessionPage() {
       notes,
       savedExercises,
       sessionStartTime: sessionStartTime ? sessionStartTime.getTime() : null,
+      isRunning,
+      elapsedSeconds,
       warmupTimerSeconds,
+      isWarmupRunning,
       warmupSeconds,
       warmupRecorded,
       cooldownTimerSeconds,
+      isCooldownRunning,
       cooldownSeconds,
       cooldownRecorded,
+      currentMenuStartTime: currentMenuStartTime ? currentMenuStartTime.getTime() : null,
       savedAt: Date.now()
     };
     try {
@@ -388,13 +399,13 @@ export default function SessionPage() {
     } catch (e) {
       console.error('Failed to save session to storage:', e);
     }
-  }, [sessionStartTime, date, selectedMenuId, sets, notes, savedExercises, warmupTimerSeconds, warmupSeconds, warmupRecorded, cooldownTimerSeconds, cooldownSeconds, cooldownRecorded]);
+  }, [sessionStartTime, date, selectedMenuId, sets, notes, savedExercises, isRunning, elapsedSeconds, warmupTimerSeconds, isWarmupRunning, warmupSeconds, warmupRecorded, cooldownTimerSeconds, isCooldownRunning, cooldownSeconds, cooldownRecorded, currentMenuStartTime]);
 
   useEffect(() => {
     if (sessionStartTime) {
       saveSessionToStorage();
     }
-  }, [sets, notes, savedExercises, saveSessionToStorage, sessionStartTime]);
+  }, [sets, notes, savedExercises, saveSessionToStorage, sessionStartTime, isRunning, elapsedSeconds, warmupTimerSeconds, isWarmupRunning, cooldownTimerSeconds, isCooldownRunning]);
 
   useEffect(() => {
     try {
@@ -416,20 +427,68 @@ export default function SessionPage() {
 
   const handleRestore = () => {
     if (!savedSessionData) return;
+    console.log('=== 復元開始 ===');
+    console.log('savedSessionData.currentMenuStartTime:', savedSessionData.currentMenuStartTime);
+    setIsRestoring(true);
     setDate(savedSessionData.date);
+    console.log('selectedMenuId:', savedSessionData.selectedMenuId || '');
     setSelectedMenuId(savedSessionData.selectedMenuId || '');
     setSets(savedSessionData.sets || [createDefaultSet('weight')]);
     setNotes(savedSessionData.notes || '');
     setSavedExercises(savedSessionData.savedExercises || []);
+
+    // calculate seconds passed since last save
+    const secondsSinceSave = Math.max(0, Math.floor((Date.now() - (savedSessionData.savedAt || Date.now())) / 1000));
+    // calculate milliseconds passed since last save
+    const millisecondsSinceSave = Date.now() - savedSessionData.savedAt;
+    console.log('millisecondsSinceSave:', millisecondsSinceSave);
+    console.log('secondsSinceSave:', secondsSinceSave);
+
+    // session timer
     setSessionStartTime(savedSessionData.sessionStartTime ? new Date(savedSessionData.sessionStartTime) : null);
-    setIsRunning(Boolean(savedSessionData.sessionStartTime));
-    setWarmupTimerSeconds(savedSessionData.warmupTimerSeconds || 0);
-    setWarmupSeconds(savedSessionData.warmupSeconds || 0);
+    setIsRunning(Boolean(savedSessionData.isRunning));
+    if (savedSessionData.isRunning) {
+      setElapsedSeconds((Number(savedSessionData.elapsedSeconds) || 0) + secondsSinceSave);
+    } else {
+      setElapsedSeconds(Number(savedSessionData.elapsedSeconds) || 0);
+    }
+
+    // warmup timer
+    setIsWarmupRunning(Boolean(savedSessionData.isWarmupRunning));
     setWarmupRecorded(Boolean(savedSessionData.warmupRecorded));
-    setCooldownTimerSeconds(savedSessionData.cooldownTimerSeconds || 0);
+    setWarmupSeconds(savedSessionData.warmupSeconds || 0);
+    if (savedSessionData.isWarmupRunning) {
+      setWarmupTimerSeconds((savedSessionData.warmupTimerSeconds || 0) + secondsSinceSave);
+    } else {
+      setWarmupTimerSeconds(savedSessionData.warmupTimerSeconds || 0);
+    }
+
+    // cooldown timer
+    setIsCooldownRunning(Boolean(savedSessionData.isCooldownRunning));
     setCooldownSeconds(savedSessionData.cooldownSeconds || 0);
+    if (savedSessionData.isCooldownRunning) {
+      setCooldownTimerSeconds((savedSessionData.cooldownTimerSeconds || 0) + secondsSinceSave);
+    } else {
+      setCooldownTimerSeconds(savedSessionData.cooldownTimerSeconds || 0);
+    }
+
     setCooldownRecorded(Boolean(savedSessionData.cooldownRecorded));
+    // current menu start time restore
+    if (savedSessionData.currentMenuStartTime) {
+      // adjust start time into the past by elapsed time since save
+      const adjustedStartTime = savedSessionData.currentMenuStartTime - millisecondsSinceSave;
+      console.log('adjustedStartTime:', adjustedStartTime);
+      console.log('new Date(adjustedStartTime):', new Date(adjustedStartTime));
+      setCurrentMenuStartTime(new Date(adjustedStartTime));
+    } else {
+      console.log('currentMenuStartTime is null');
+      setCurrentMenuStartTime(null);
+    }
     setShowRestoreDialog(false);
+    setTimeout(() => {
+      console.log('=== 復元完了（isRestoring を false に）===');
+      setIsRestoring(false);
+    }, 0);
   };
 
   const handleStartNew = () => {
@@ -560,13 +619,26 @@ export default function SessionPage() {
   }, [currentMenuStartTime]);
 
   useEffect(() => {
+    console.log('--- selectedMenuId useEffect 実行 ---');
+    console.log('isRestoring:', isRestoring);
+    console.log('selectedMenuId:', selectedMenuId);
+    if (isRestoring) {
+      console.log('→ 復元中のためスキップ');
+      return;
+    }
     if (selectedMenuId) {
+      console.log('→ currentMenuStartTime を現在時刻に設定');
       setCurrentMenuStartTime(new Date());
     } else {
+      console.log('→ currentMenuStartTime を null に設定');
       setCurrentMenuStartTime(null);
     }
     setCurrentLapSeconds(0);
   }, [selectedMenuId]);
+
+  useEffect(() => {
+    console.log('*** currentMenuStartTime が変更されました:', currentMenuStartTime);
+  }, [currentMenuStartTime]);
 
   const formattedElapsed = useMemo(() => formatElapsedTime(elapsedSeconds), [elapsedSeconds]);
   const sessionStartLabel = useMemo(
