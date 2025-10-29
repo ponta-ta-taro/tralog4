@@ -684,15 +684,16 @@ export default function SessionPage() {
       }
 
       const ex = found.exercises.find(e => e?.name === menuName);
-      const prevSetsRaw = ex?.sets ?? [];
-      const mappedSets: ExerciseSet[] = prevSetsRaw.map(s => ({
+      type RawSet = Partial<Pick<ExerciseSet, 'weight' | 'reps' | 'time' | 'duration' | 'distance' | 'side'>>;
+      const prevSetsRaw = (ex?.sets ?? []) as RawSet[];
+      const mappedSets: ExerciseSet[] = prevSetsRaw.map((s: RawSet) => ({
         id: generateId(),
         weight: typeof s.weight === 'number' ? s.weight : undefined,
         reps: typeof s.reps === 'number' ? s.reps : undefined,
         time: typeof s.time === 'number' ? s.time : (typeof s.duration === 'number' ? s.duration : undefined),
         duration: typeof s.duration === 'number' ? s.duration : undefined,
         distance: typeof s.distance === 'number' ? s.distance : undefined,
-        side: (typeof (s as any).side === 'string' ? (s as any).side : undefined) as ExerciseSet['side'],
+        side: (typeof s.side === 'string' ? (s.side as ExerciseSet['side']) : undefined),
         completed: false
       }));
 
