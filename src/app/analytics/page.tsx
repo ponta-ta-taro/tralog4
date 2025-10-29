@@ -166,7 +166,7 @@ export default function AnalyticsPage() {
       setWeeklyDataError('週次ボリュームの集計に失敗しました。');
       return [];
     }
-  }, [workouts]);
+  }, [workouts, selectedMenu]);
 
   const chartData = useMemo<ChartData[]>(() => {
     if (!selectedMenu) {
