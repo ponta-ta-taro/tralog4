@@ -642,7 +642,11 @@ export default function SessionPage() {
     const type = menu?.type ?? 'weight';
     setSelectedMenuId(value);
     setCurrentMenuType(type);
-    setSets([createDefaultSet(type)]);
+    {
+      const base = createDefaultSet(type);
+      const initial: ExerciseSet = menu?.hasSides ? { ...base, side: 'both' } : base;
+      setSets([initial]);
+    }
     setNotes('');
     setSuccessMessage(null);
     setSaveError(null);
@@ -688,6 +692,7 @@ export default function SessionPage() {
         time: typeof s.time === 'number' ? s.time : (typeof s.duration === 'number' ? s.duration : undefined),
         duration: typeof s.duration === 'number' ? s.duration : undefined,
         distance: typeof s.distance === 'number' ? s.distance : undefined,
+        side: (typeof (s as any).side === 'string' ? (s as any).side : undefined) as ExerciseSet['side'],
         completed: false
       }));
 
@@ -725,6 +730,7 @@ export default function SessionPage() {
         time: currentMenuType === 'time' ? lastSet?.time ?? lastSet?.duration ?? 60 : undefined,
         duration: currentMenuType === 'time' ? lastSet?.duration ?? lastSet?.time ?? 60 : undefined,
         distance: currentMenuType === 'distance' ? lastSet?.distance ?? 1 : undefined,
+        side: (selectedMenu?.hasSides ? (lastSet?.side ?? 'both') : undefined) as ExerciseSet['side'],
         completed: false
       };
       return [...prev, newSet];
@@ -781,6 +787,12 @@ export default function SessionPage() {
     );
   };
 
+  const updateSetSide = (setId: string, side: 'left' | 'right' | 'both') => {
+    setSets(prev =>
+      prev.map(set => (set.id === setId ? { ...set, side } as ExerciseSet : set))
+    );
+  };
+
   const handleToggleComplete = (setId: string) => {
     setSets(prev =>
       prev.map(set =>
@@ -810,22 +822,22 @@ export default function SessionPage() {
         case 'weight': {
           const weight = Number(set.weight) || 0;
           const reps = Number(set.reps) || 0;
-          if (weight > 0 && reps > 0) cleanedSets.push({ id: baseId, weight, reps });
+          if (weight > 0 && reps > 0) cleanedSets.push({ id: baseId, weight, reps, side: selected.hasSides ? set.side : undefined });
           break;
         }
         case 'bodyweight': {
           const reps = Number(set.reps) || 0;
-          if (reps > 0) cleanedSets.push({ id: baseId, reps });
+          if (reps > 0) cleanedSets.push({ id: baseId, reps, side: selected.hasSides ? set.side : undefined });
           break;
         }
         case 'time': {
           const timeSeconds = Number(set.time ?? set.duration ?? 0);
-          if (timeSeconds > 0) cleanedSets.push({ id: baseId, time: timeSeconds, duration: timeSeconds });
+          if (timeSeconds > 0) cleanedSets.push({ id: baseId, time: timeSeconds, duration: timeSeconds, side: selected.hasSides ? set.side : undefined });
           break;
         }
         case 'distance': {
           const distance = Number(set.distance ?? 0);
-          if (distance > 0) cleanedSets.push({ id: baseId, distance });
+          if (distance > 0) cleanedSets.push({ id: baseId, distance, side: selected.hasSides ? set.side : undefined });
           break;
         }
         default:
@@ -1125,6 +1137,9 @@ export default function SessionPage() {
                         {prevRecord.sets.map((s, idx) => (
                           <div key={idx}>
                             {formatSetSummary(s, idx, prevRecord.menuType)}
+                            {s.side && s.side !== 'both' && (
+                              <span className="ml-1 text-gray-500">({s.side === 'left' ? '左' : '右'})</span>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1148,7 +1163,7 @@ export default function SessionPage() {
                       className={`grid gap-3 rounded-md border p-4 ${getSetGridClass(currentMenuType)} sm:items-end`}
                     >
                       {currentMenuType === 'weight' && (
-                        <>
+                        <div className="grid grid-cols-2 gap-2 mb-2">
                           <div>
                             <Label htmlFor={`weight-${set.id}`}>重量 (kg)</Label>
                             <Input
@@ -1160,7 +1175,7 @@ export default function SessionPage() {
                               onChange={event =>
                                 handleNumericInputChange(set.id, 'weight', event.target.value)
                               }
-                              className={`mt-1 ${set.completed ? 'opacity-60' : ''}`}
+                              className={`mt-1 w-full ${set.completed ? 'opacity-60' : ''}`}
                               disabled={!selectedMenuId || !sessionStartTime || !warmupRecorded || Boolean(set.completed)}
                             />
                           </div>
@@ -1174,59 +1189,102 @@ export default function SessionPage() {
                               onChange={event =>
                                 handleNumericInputChange(set.id, 'reps', event.target.value)
                               }
-                              className={`mt-1 ${set.completed ? 'opacity-60' : ''}`}
+                              className={`mt-1 w-full ${set.completed ? 'opacity-60' : ''}`}
                               disabled={!selectedMenuId || !sessionStartTime || !warmupRecorded || Boolean(set.completed)}
                             />
                           </div>
-                        </>
+                        </div>
                       )}
 
                       {currentMenuType === 'bodyweight' && (
-                        <div>
-                          <Label htmlFor={`reps-${set.id}`}>回数</Label>
-                          <Input
-                            id={`reps-${set.id}`}
-                            type="number"
-                            min="0"
-                            value={set.reps ?? ''}
-                            onChange={event =>
-                              handleNumericInputChange(set.id, 'reps', event.target.value)
-                            }
-                            className={`mt-1 ${set.completed ? 'opacity-60' : ''}`}
-                            disabled={!selectedMenuId || !sessionStartTime || !warmupRecorded || Boolean(set.completed)}
-                          />
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                          <div className="col-span-2">
+                            <Label htmlFor={`reps-${set.id}`}>回数</Label>
+                            <Input
+                              id={`reps-${set.id}`}
+                              type="number"
+                              min="0"
+                              value={set.reps ?? ''}
+                              onChange={event =>
+                                handleNumericInputChange(set.id, 'reps', event.target.value)
+                              }
+                              className={`mt-1 w-full ${set.completed ? 'opacity-60' : ''}`}
+                              disabled={!selectedMenuId || !sessionStartTime || !warmupRecorded || Boolean(set.completed)}
+                            />
+                          </div>
                         </div>
                       )}
 
                       {currentMenuType === 'time' && (
-                        <div>
-                          <Label htmlFor={`time-${set.id}`}>時間 (秒 または 分:秒)</Label>
-                          <Input
-                            id={`time-${set.id}`}
-                            type="text"
-                            value={formatSecondsForInput(set.time ?? set.duration)}
-                            onChange={event => handleTimeChange(set.id, event.target.value)}
-                            className={`mt-1 ${set.completed ? 'opacity-60' : ''}`}
-                            disabled={!selectedMenuId || Boolean(set.completed)}
-                          />
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                          <div className="col-span-2">
+                            <Label htmlFor={`time-${set.id}`}>時間 (秒 または 分:秒)</Label>
+                            <Input
+                              id={`time-${set.id}`}
+                              type="text"
+                              value={formatSecondsForInput(set.time ?? set.duration)}
+                              onChange={event => handleTimeChange(set.id, event.target.value)}
+                              className={`mt-1 w-full ${set.completed ? 'opacity-60' : ''}`}
+                              disabled={!selectedMenuId || Boolean(set.completed)}
+                            />
+                          </div>
                         </div>
                       )}
 
                       {currentMenuType === 'distance' && (
-                        <div>
-                          <Label htmlFor={`distance-${set.id}`}>距離 (km)</Label>
-                          <Input
-                            id={`distance-${set.id}`}
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            value={set.distance ?? ''}
-                            onChange={event =>
-                              handleNumericInputChange(set.id, 'distance', event.target.value)
-                            }
-                            className={`mt-1 ${set.completed ? 'opacity-60' : ''}`}
-                            disabled={!selectedMenuId || Boolean(set.completed)}
-                          />
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                          <div className="col-span-2">
+                            <Label htmlFor={`distance-${set.id}`}>距離 (km)</Label>
+                            <Input
+                              id={`distance-${set.id}`}
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              value={set.distance ?? ''}
+                              onChange={event =>
+                                handleNumericInputChange(set.id, 'distance', event.target.value)
+                              }
+                              className={`mt-1 w-full ${set.completed ? 'opacity-60' : ''}`}
+                              disabled={!selectedMenuId || Boolean(set.completed)}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedMenu?.hasSides && (
+                        <div className="sm:col-span-full">
+                          <div className="flex gap-2 mb-2">
+                            <button
+                              type="button"
+                              onClick={() => updateSetSide(set.id, 'right')}
+                              className={`flex-1 h-8 rounded text-sm font-medium transition-colors ${
+                                set.side === 'right' ? 'bg-cyan-500 text-white' : 'bg-gray-200 text-gray-700'
+                              }`}
+                              disabled={!selectedMenuId || !sessionStartTime || !warmupRecorded || Boolean(set.completed)}
+                            >
+                              右
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateSetSide(set.id, 'left')}
+                              className={`flex-1 h-8 rounded text-sm font-medium transition-colors ${
+                                set.side === 'left' ? 'bg-cyan-500 text-white' : 'bg-gray-200 text-gray-700'
+                              }`}
+                              disabled={!selectedMenuId || !sessionStartTime || !warmupRecorded || Boolean(set.completed)}
+                            >
+                              左
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateSetSide(set.id, 'both')}
+                              className={`flex-1 h-8 rounded text-sm font-medium transition-colors ${
+                                set.side === 'both' || !set.side ? 'bg-cyan-500 text-white' : 'bg-gray-200 text-gray-700'
+                              }`}
+                              disabled={!selectedMenuId || !sessionStartTime || !warmupRecorded || Boolean(set.completed)}
+                            >
+                              両方
+                            </button>
+                          </div>
                         </div>
                       )}
 
