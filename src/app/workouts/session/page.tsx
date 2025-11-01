@@ -327,6 +327,9 @@ export default function SessionPage() {
   const [warmupTimerSeconds, setWarmupTimerSeconds] = useState(0);
   const [isCooldownRunning, setIsCooldownRunning] = useState(false);
   const [cooldownTimerSeconds, setCooldownTimerSeconds] = useState(0);
+  // start timestamps for sleep-resilient timers
+  const [warmupStartTime, setWarmupStartTime] = useState<Date | null>(null);
+  const [cooldownStartTime, setCooldownStartTime] = useState<Date | null>(null);
   const [warmupRecorded, setWarmupRecorded] = useState(false);
   const [cooldownRecorded, setCooldownRecorded] = useState(false);
   // flow control flags
@@ -358,10 +361,12 @@ export default function SessionPage() {
     elapsedSeconds: number;
     warmupTimerSeconds: number;
     isWarmupRunning: boolean;
+    warmupStartTime: number | null;
     warmupSeconds: number;
     warmupRecorded: boolean;
     cooldownTimerSeconds: number;
     isCooldownRunning: boolean;
+    cooldownStartTime: number | null;
     cooldownSeconds: number;
     cooldownRecorded: boolean;
     currentMenuStartTime: number | null;
@@ -385,10 +390,12 @@ export default function SessionPage() {
       elapsedSeconds,
       warmupTimerSeconds,
       isWarmupRunning,
+      warmupStartTime: warmupStartTime ? warmupStartTime.getTime() : null,
       warmupSeconds,
       warmupRecorded,
       cooldownTimerSeconds,
       isCooldownRunning,
+      cooldownStartTime: cooldownStartTime ? cooldownStartTime.getTime() : null,
       cooldownSeconds,
       cooldownRecorded,
       currentMenuStartTime: currentMenuStartTime ? currentMenuStartTime.getTime() : null,
@@ -399,7 +406,7 @@ export default function SessionPage() {
     } catch (e) {
       console.error('Failed to save session to storage:', e);
     }
-  }, [sessionStartTime, date, selectedMenuId, sets, notes, savedExercises, isRunning, elapsedSeconds, warmupTimerSeconds, isWarmupRunning, warmupSeconds, warmupRecorded, cooldownTimerSeconds, isCooldownRunning, cooldownSeconds, cooldownRecorded, currentMenuStartTime]);
+  }, [sessionStartTime, date, selectedMenuId, sets, notes, savedExercises, isRunning, elapsedSeconds, warmupTimerSeconds, isWarmupRunning, warmupStartTime, warmupSeconds, warmupRecorded, cooldownTimerSeconds, isCooldownRunning, cooldownStartTime, cooldownSeconds, cooldownRecorded, currentMenuStartTime]);
 
   useEffect(() => {
     if (sessionStartTime) {
@@ -462,6 +469,14 @@ export default function SessionPage() {
     } else {
       setWarmupTimerSeconds(savedSessionData.warmupTimerSeconds || 0);
     }
+    if (savedSessionData.warmupStartTime) {
+      const adjustedWarmupStart = savedSessionData.isWarmupRunning
+        ? savedSessionData.warmupStartTime - millisecondsSinceSave
+        : savedSessionData.warmupStartTime;
+      setWarmupStartTime(new Date(adjustedWarmupStart));
+    } else {
+      setWarmupStartTime(null);
+    }
 
     // cooldown timer
     setIsCooldownRunning(Boolean(savedSessionData.isCooldownRunning));
@@ -470,6 +485,14 @@ export default function SessionPage() {
       setCooldownTimerSeconds((savedSessionData.cooldownTimerSeconds || 0) + secondsSinceSave);
     } else {
       setCooldownTimerSeconds(savedSessionData.cooldownTimerSeconds || 0);
+    }
+    if (savedSessionData.cooldownStartTime) {
+      const adjustedCooldownStart = savedSessionData.isCooldownRunning
+        ? savedSessionData.cooldownStartTime - millisecondsSinceSave
+        : savedSessionData.cooldownStartTime;
+      setCooldownStartTime(new Date(adjustedCooldownStart));
+    } else {
+      setCooldownStartTime(null);
     }
 
     setCooldownRecorded(Boolean(savedSessionData.cooldownRecorded));
@@ -528,20 +551,33 @@ export default function SessionPage() {
       .finally(() => setIsMenuLoading(false));
   }, [user]);
 
-  // Independent timers for warmup/cooldown
+  // Independent timers for warmup/cooldown (sleep-resilient)
   useEffect(() => {
-    if (!isWarmupRunning) return;
-    const id = window.setInterval(() => setWarmupTimerSeconds(prev => prev + 1), 1000);
+    if (!isWarmupRunning || !warmupStartTime) return;
+    const update = () => {
+      const now = Date.now();
+      const elapsed = Math.max(0, Math.floor((now - warmupStartTime.getTime()) / 1000));
+      setWarmupTimerSeconds(elapsed);
+    };
+    update();
+    const id = window.setInterval(update, 100);
     return () => window.clearInterval(id);
-  }, [isWarmupRunning]);
+  }, [isWarmupRunning, warmupStartTime]);
 
   useEffect(() => {
-    if (!isCooldownRunning) return;
-    const id = window.setInterval(() => setCooldownTimerSeconds(prev => prev + 1), 1000);
+    if (!isCooldownRunning || !cooldownStartTime) return;
+    const update = () => {
+      const now = Date.now();
+      const elapsed = Math.max(0, Math.floor((now - cooldownStartTime.getTime()) / 1000));
+      setCooldownTimerSeconds(elapsed);
+    };
+    update();
+    const id = window.setInterval(update, 100);
     return () => window.clearInterval(id);
-  }, [isCooldownRunning]);
+  }, [isCooldownRunning, cooldownStartTime]);
 
   const startWarmup = () => {
+    setWarmupStartTime(new Date());
     setIsWarmupRunning(true);
     setWarmupRecorded(false);
     setWarmupStarted(true);
@@ -552,7 +588,12 @@ export default function SessionPage() {
     setWarmupRecorded(true);
   };
   const resumeWarmup = () => {
-    if (!isWarmupRunning) setIsWarmupRunning(true);
+    if (!isWarmupRunning) {
+      // continue from current displayed elapsed seconds
+      const adjusted = new Date(Date.now() - warmupTimerSeconds * 1000);
+      setWarmupStartTime(adjusted);
+      setIsWarmupRunning(true);
+    }
   };
   const recordWarmup = () => {
     setWarmupSeconds(warmupTimerSeconds);
@@ -560,12 +601,14 @@ export default function SessionPage() {
   };
   const resetWarmup = () => {
     setIsWarmupRunning(false);
+    setWarmupStartTime(null);
     setWarmupTimerSeconds(0);
     setWarmupSeconds(0);
     setWarmupRecorded(false);
   };
 
   const startCooldown = () => {
+    setCooldownStartTime(new Date());
     setIsCooldownRunning(true);
     setCooldownRecorded(false);
     setCooldownStarted(true);
@@ -576,7 +619,11 @@ export default function SessionPage() {
     setCooldownRecorded(true);
   };
   const resumeCooldown = () => {
-    if (!isCooldownRunning) setIsCooldownRunning(true);
+    if (!isCooldownRunning) {
+      const adjusted = new Date(Date.now() - cooldownTimerSeconds * 1000);
+      setCooldownStartTime(adjusted);
+      setIsCooldownRunning(true);
+    }
   };
   const recordCooldown = () => {
     setCooldownSeconds(cooldownTimerSeconds);
@@ -584,6 +631,7 @@ export default function SessionPage() {
   };
   const resetCooldown = () => {
     setIsCooldownRunning(false);
+    setCooldownStartTime(null);
     setCooldownTimerSeconds(0);
     setCooldownSeconds(0);
     setCooldownRecorded(false);
@@ -591,17 +639,23 @@ export default function SessionPage() {
 
   // removed fetching today's workouts; accumulating locally in savedExercises
 
+  // Session timer (sleep-resilient)
   useEffect(() => {
-    if (!isRunning) {
+    if (!isRunning || !sessionStartTime) {
       return;
     }
 
-    const timerId = window.setInterval(() => {
-      setElapsedSeconds(prev => prev + 1);
-    }, 1000);
+    const update = () => {
+      const now = Date.now();
+      const elapsed = Math.max(0, Math.floor((now - sessionStartTime.getTime()) / 1000));
+      setElapsedSeconds(elapsed);
+    };
+
+    update();
+    const timerId = window.setInterval(update, 100);
 
     return () => window.clearInterval(timerId);
-  }, [isRunning]);
+  }, [isRunning, sessionStartTime]);
 
   useEffect(() => {
     if (!currentMenuStartTime) {
@@ -688,6 +742,8 @@ export default function SessionPage() {
     setCooldownSeconds(0);
     setRecordedWarmupSeconds(0);
     setRecordedCooldownSeconds(0);
+    setWarmupStartTime(null);
+    setCooldownStartTime(null);
   };
 
   const handlePause = () => {
@@ -708,6 +764,9 @@ export default function SessionPage() {
     if (!sessionStartTime || isRunning) {
       return;
     }
+    // Adjust start time so elapsed continues from paused seconds
+    const adjustedStartTime = new Date(Date.now() - elapsedSeconds * 1000);
+    setSessionStartTime(adjustedStartTime);
     setSessionEndTime(null);
     setIsRunning(true);
   };
